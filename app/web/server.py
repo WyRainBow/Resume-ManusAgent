@@ -14,26 +14,6 @@ from app.llm import LLM
 from app.logger import logger
 from app.schema import AgentState, Message
 
-# 简单对话关键词（不需要工具的对话）
-SIMPLE_CHAT_KEYWORDS = [
-    "你好", "您好", "hi", "hello", "hey", "嗨", "喂",
-    "谢谢", "感谢", "thanks", "thank you",
-    "再见", "拜拜", "bye", "goodbye",
-    "好的", "ok", "okay", "明白", "了解",
-    "是什么", "什么是", "介绍一下", "解释一下",
-    "你是谁", "你叫什么", "who are you"
-]
-
-def is_simple_chat(prompt: str) -> bool:
-    """判断是否是简单对话（不需要工具调用）"""
-    prompt_lower = prompt.lower().strip()
-    # 如果消息很短且包含问候关键词
-    if len(prompt) < 50:
-        for keyword in SIMPLE_CHAT_KEYWORDS:
-            if keyword in prompt_lower:
-                return True
-    return False
-
 # 定义消息类型
 class AgentMessage(BaseModel):
     type: str  # "thought", "tool_call", "tool_result", "answer", "error"
@@ -139,52 +119,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             try:
-                # 判断是否是简单对话
-                if is_simple_chat(prompt):
-                    # 简单对话：直接用 LLM 回复，不调用工具
-                    await websocket.send_json({
-                        "type": "status",
-                        "content": "processing",
-                        "message": "正在回复..."
-                    })
+                # 所有请求都使用 Manus 智能体处理
+                await websocket.send_json({
+                    "type": "status",
+                    "content": "processing",
+                    "message": "收到任务，正在分析..."
+                })
 
-                    llm = LLM()
-                    response = await llm.ask(
-                        messages=[
-                            {"role": "system", "content": "你是 OpenManus，一个友好的 AI 助手。请用简洁友好的方式回复用户。"},
-                            {"role": "user", "content": prompt}
-                        ]
-                    )
+                # 确保智能体处于 IDLE 状态
+                if agent.state != AgentState.IDLE:
+                    agent.state = AgentState.IDLE
+                    agent.current_step = 0
 
-                    await websocket.send_json({
-                        "type": "answer",
-                        "content": response
-                    })
-                else:
-                    # 复杂任务：使用 Manus 智能体，实时流式输出
-                    await websocket.send_json({
-                        "type": "status",
-                        "content": "processing",
-                        "message": "收到任务，正在分析..."
-                    })
+                # 清空之前的记忆
+                agent.memory.messages.clear()
 
-                    # 确保智能体处于 IDLE 状态
-                    if agent.state != AgentState.IDLE:
-                        agent.state = AgentState.IDLE
-                        agent.current_step = 0
+                # 添加用户消息
+                agent.memory.add_message(Message.user_message(prompt))
 
-                    # 清空之前的记忆
-                    agent.memory.messages.clear()
+                # 手动执行步骤循环，实现实时输出（限制最多5步，避免过度探索）
+                max_steps = 5
+                results = []
 
-                    # 添加用户消息
-                    agent.memory.add_message(Message.user_message(prompt))
-
-                    # 手动执行步骤循环，实现实时输出（限制最多5步，避免过度探索）
-                    max_steps = 5
-                    results = []
-
-                    async with agent.state_context(AgentState.RUNNING):
-                        while agent.current_step < max_steps and agent.state != AgentState.FINISHED:
+                async with agent.state_context(AgentState.RUNNING):
+                    while agent.current_step < max_steps and agent.state != AgentState.FINISHED:
                             agent.current_step += 1
 
                             # 发送当前步骤

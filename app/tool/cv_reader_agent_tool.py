@@ -202,22 +202,27 @@ Use this tool when:
             # 先设置到 CVReaderAgentTool
             CVReaderAgentTool.set_resume_data(sample_resume)
 
-            # 然后让 CVEditorAgentTool 使用同一个引用
-            # 这样 CVEditor 的修改会直接影响到 CVReader 的数据
+            # 然后让其他工具使用同一个引用
+            # 这样 CVEditor 的修改会直接影响到其他工具的数据
             from app.tool.cv_editor_agent_tool import CVEditorAgentTool
+            from app.tool.cv_analyzer_agent_tool import CVAnalyzerAgentTool
+            from app.tool.cv_optimizer_agent_tool import CVOptimizerAgentTool
+
             CVEditorAgentTool.set_resume_data(CVReaderAgentTool._global_resume_data)
+            CVAnalyzerAgentTool.set_resume_data(CVReaderAgentTool._global_resume_data)
+            CVOptimizerAgentTool.set_resume_data(CVReaderAgentTool._global_resume_data)
 
             basic = sample_resume["basic"]
             return ToolResult(
-                output=f"""Successfully loaded resume!
+                output=f"""简历加载成功！
 
-**Candidate:** {basic['name']}
-**Position:** {basic['title']}
-**Email:** {basic['email']}
-**Phone:** {basic['phone']}
-**Location:** {basic['location']}
+**姓名：** {basic.get('name', '未填写')}
+**目标职位：** {basic.get('title', '未填写')}
+**邮箱：** {basic.get('email', '未填写')}
+**电话：** {basic.get('phone', '未填写')}
+**地点：** {basic.get('location', '未填写')}
 
-You can now use the cv_reader_agent tool to ask questions about this resume."""
+现在可以帮用户分析这份简历。请用第一人称与用户对话（例如："您的简历"、"我的优势"，而不是"候选人的简历"、"候选人的优势"）。"""
             )
 
         return ToolResult(error="Unknown resume source.")

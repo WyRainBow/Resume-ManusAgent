@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Loader2, Terminal, FileText, ChevronDown, ChevronUp, X, Eye, Sparkles, Brain, Zap, CheckCircle2, AlertCircle, Wrench, Search } from 'lucide-react';
+import { Send, Bot, User, Loader2, Terminal, FileText, ChevronDown, ChevronUp, X, Eye, Sparkles, Brain, Zap, CheckCircle2, AlertCircle, Wrench, Search, Edit, BarChart, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import HTMLTemplateRenderer from './components/HTMLTemplateRenderer';
 
@@ -87,6 +87,7 @@ function App() {
   const messagesEndRef = useRef(null);
   const [showResumePanel, setShowResumePanel] = useState(false);
   const [resumeData, setResumeData] = useState(SAMPLE_RESUME);
+  const [showThinkingProcess, setShowThinkingProcess] = useState(false);
 
   useEffect(() => {
     // 自动连接 WebSocket
@@ -208,6 +209,7 @@ function App() {
       // 如果是最终答案
       if (data.type === 'answer') {
         setStatus('idle');
+        setShowThinkingProcess(false); // 思考完成，自动收起
         return [...newMessages, { role: 'agent', type: 'answer', content: data.content }];
       }
 
@@ -225,8 +227,39 @@ function App() {
     e.preventDefault();
     if (!input.trim() || status === 'processing') return;
 
+    // 检测是否是问候消息
+    const isGreeting = /^(你好|您好|hi|hello|嗨)$/i.test(input.trim());
+
     // 添加用户消息
     setMessages(prev => [...prev, { role: 'user', content: input }]);
+
+    // 如果是问候，立即返回markdown欢迎消息
+    if (isGreeting) {
+      setMessages(prev => [...prev, {
+        role: 'agent',
+        type: 'greeting',
+        content: `# 👋 你好！我是 OpenManus
+
+很高兴为您服务！我可以帮您：
+
+## ✨ 我的能力
+
+- 📊 **分析简历** - 深入分析简历质量和问题
+- ✏️ **优化简历** - 改进内容和格式，提升竞争力
+- 💡 **求职建议** - 提供专业的求职指导
+- 🎨 **格式美化** - 优化简历结构和排版
+
+## 🚀 如何开始
+
+1. **加载简历** - 请先上传或输入您的简历数据
+2. **分析问题** - 告诉我 '分析一下我的简历'
+3. **开始优化** - 跟随我的建议逐步优化
+
+请告诉我您的需求，让我们开始吧！ 😊`
+      }]);
+      setInput('');
+      return;
+    }
 
     // 发送请求
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -265,7 +298,7 @@ function App() {
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
       {/* 主聊天区域 */}
       <div className={`flex flex-col h-full bg-white shadow-xl overflow-hidden transition-all duration-300 ${
-        showResumePanel ? 'flex-1 max-w-2xl' : 'w-full max-w-5xl mx-auto'
+        showResumePanel ? 'w-1/2' : 'w-full max-w-5xl mx-auto'
       }`}>
 
         {/* Header with Navigation */}
@@ -288,7 +321,7 @@ function App() {
                   status === 'processing' ? 'bg-violet-500 animate-pulse' : 'bg-green-500'
                 }`}></span>
                 <span className="text-gray-500">
-                  {status === 'processing' ? '🧠 正在思考中...' : (status === 'disconnected' ? '❌ 未连接' : '✅ 就绪')}
+                  {status === 'processing' ? '正在思考中...' : (status === 'disconnected' ? '未连接' : '✅ 就绪')}
                 </span>
               </div>
             </div>
@@ -355,16 +388,47 @@ function App() {
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
                 <Brain size={16} className="text-white animate-pulse" />
               </div>
-              <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 p-4 rounded-2xl rounded-tl-none shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
-                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
-                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
+              <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 rounded-2xl rounded-tl-none shadow-sm">
+                <div
+                  className="p-4 cursor-pointer"
+                  onClick={() => setShowThinkingProcess(!showThinkingProcess)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
+                      </div>
+                      <span className="text-violet-700 text-sm font-medium">AI 正在思考中</span>
+                      <Sparkles size={14} className="text-violet-500 animate-pulse" />
+                    </div>
+                    <div className={`transition-transform duration-200 ${showThinkingProcess ? 'rotate-180' : ''}`}>
+                      <ChevronDown size={16} className="text-violet-500 opacity-60" />
+                    </div>
                   </div>
-                  <span className="text-violet-700 text-sm font-medium">AI 正在思考中</span>
-                  <Sparkles size={14} className="text-violet-500 animate-pulse" />
                 </div>
+                {showThinkingProcess && (
+                  <div className="px-4 pb-4 border-t border-violet-100 pt-3">
+                    {messages.filter(msg => msg.type === 'thought').length > 0 ? (
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {messages
+                          .filter(msg => msg.type === 'thought')
+                          .map((thought, idx) => (
+                            <div key={idx} className="text-xs text-violet-600 bg-white/50 p-2 rounded border border-violet-100">
+                              <ReactMarkdown className="prose prose-xs max-w-none text-violet-700">
+                                {thought.content}
+                              </ReactMarkdown>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-violet-500 italic">
+                        思考过程将在这里显示...
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -384,7 +448,7 @@ function App() {
                   handleSubmit(e);
                 }
               }}
-              placeholder="告诉我您的信息，帮您生成简历...（例如：我叫韦宇，是一名前端工程师）"
+              placeholder="告诉我您的信息，帮您生成简历...（例如：我叫张三，是一名后端工程师）"
               className="w-full pl-4 pr-12 py-3 bg-gray-100 border-0 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none min-h-[56px] max-h-32"
               rows="1"
             />
@@ -404,7 +468,7 @@ function App() {
 
       {/* 简历预览面板 */}
       {showResumePanel && (
-        <div className="flex-1 border-l border-gray-200 bg-gray-100 flex flex-col overflow-hidden">
+        <div className="w-1/2 border-l border-gray-200 bg-gray-100 flex flex-col overflow-hidden">
           <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
             <div>
               <h2 className="font-semibold text-gray-800">简历预览</h2>
@@ -462,45 +526,62 @@ const MessageItem = ({ message }) => {
     const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
 
     // 工具图标映射
-    const toolIcons = {
-      'load_resume_data': '📋',
+    const toolIconComponents = {
+      'load_resume_data': null, // 不显示图标
+      'cv_reader_agent': null, // 使用 emoji 🔍
+      'cv_editor_agent': Edit,
+      'get_resume_structure': BarChart,
+      'create_chat_completion': MessageSquare,
+    };
+
+    const toolEmojis = {
       'cv_reader_agent': '🔍',
-      'cv_editor_agent': '✏️',
-      'get_resume_structure': '📊',
-      'create_chat_completion': '💬',
     };
 
     const toolColors = {
-      'load_resume_data': 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-700',
-      'cv_reader_agent': 'from-blue-50 to-cyan-50 border-blue-200 text-blue-700',
-      'cv_editor_agent': 'from-violet-50 to-purple-50 border-violet-200 text-violet-700',
-      'get_resume_structure': 'from-amber-50 to-orange-50 border-amber-200 text-amber-700',
+      'load_resume_data': 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-700 bg-emerald-50/50',
+      'cv_reader_agent': 'from-blue-50 to-cyan-50 border-blue-200 text-blue-700 bg-blue-50/50',
+      'cv_editor_agent': 'from-violet-50 to-purple-50 border-violet-200 text-violet-700 bg-violet-50/50',
+      'get_resume_structure': 'from-amber-50 to-orange-50 border-amber-200 text-amber-700 bg-amber-50/50',
     };
 
-    const colorClass = toolColors[message.tool] || 'from-gray-50 to-slate-50 border-gray-200 text-gray-700';
-    const icon = toolIcons[message.tool] || '🔧';
+    const colorClass = toolColors[message.tool] || 'from-gray-50 to-slate-50 border-gray-200 text-gray-700 bg-gray-50/50';
+    const IconComponent = toolIconComponents[message.tool];
+    const emoji = toolEmojis[message.tool];
 
     return (
       <div className="flex justify-start ml-10 my-2">
-        <div className={`bg-gradient-to-r ${colorClass} border rounded-xl p-3 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md`}>
+        <div className={`bg-gradient-to-r ${colorClass} border rounded-xl p-3.5 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]`}>
           <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{icon}</span>
-              <div>
+            <div className="flex items-center gap-3">
+              {emoji ? (
+                <div className={`p-1.5 rounded-lg ${message.tool === 'cv_reader_agent' ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                  <span className="text-base">{emoji}</span>
+                </div>
+              ) : IconComponent ? (
+                <div className={`p-1.5 rounded-lg ${message.tool === 'cv_editor_agent' ? 'bg-violet-100' :
+                                                        message.tool === 'get_resume_structure' ? 'bg-amber-100' :
+                                                        'bg-gray-100'}`}>
+                  <IconComponent size={16} className={message.tool === 'cv_editor_agent' ? 'text-violet-600' :
+                                                          message.tool === 'get_resume_structure' ? 'text-amber-600' :
+                                                          'text-gray-600'} />
+                </div>
+              ) : null}
+              <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm">调用工具</span>
-                <span className="ml-2 font-mono text-xs bg-white/50 px-2 py-0.5 rounded">{message.tool}</span>
+                <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
               </div>
             </div>
             <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} />
+              <ChevronDown size={16} className="opacity-60" />
             </div>
           </div>
 
           {isExpanded && (
-            <div className="mt-3 bg-gray-900 text-gray-100 p-4 rounded-lg text-xs font-mono overflow-x-auto shadow-inner">
+            <div className="mt-3 bg-gray-900 text-gray-100 p-4 rounded-lg text-xs font-mono overflow-x-auto shadow-inner border border-gray-800">
               <div className="flex items-center gap-2 text-gray-400 mb-2 pb-2 border-b border-gray-700">
                 <Terminal size={12} />
                 <span>参数</span>
@@ -520,40 +601,81 @@ const MessageItem = ({ message }) => {
   // 工具结果展示 - 增强版
   if (message.type === 'tool_result') {
     const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
-    const isSuccess = message.content && (message.content.includes('✅') || message.content.includes('Successfully'));
+    const isSuccess = message.content && (message.content.includes('✅') || message.content.includes('Successfully') || message.content.includes('成功'));
 
-    const toolIcons = {
-      'load_resume_data': '📋',
-      'cv_reader_agent': '🔍',
-      'cv_editor_agent': '✏️',
-      'get_resume_structure': '📊',
+    // 如果是成功状态，显示简洁的成功通知卡片（参考文档中的深色成功通知样式）
+    if (isSuccess) {
+      const successText = message.content.includes('读取') || message.content.includes('load') ? '读取简历内容执行成功' :
+                         message.content.includes('分析') || message.content.includes('analyze') ? '分析简历执行成功' :
+                         message.content.includes('编辑') || message.content.includes('edit') ? '编辑简历执行成功' :
+                         '执行成功';
+
+      return (
+        <div className="flex flex-col justify-start ml-10 my-2">
+          <div className="bg-gray-800 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg max-w-[90%] cursor-pointer hover:bg-gray-700 transition-colors"
+               onClick={() => setIsExpanded(!isExpanded)}>
+            <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 size={14} className="text-white" />
+            </div>
+            <span className="text-white text-sm font-medium flex-1">{successText}</span>
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <ChevronDown size={16} className="text-gray-400" />
+            </div>
+          </div>
+          {isExpanded && (
+            <div className="mt-2 bg-white border border-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner max-w-[90%]">
+              <pre className="text-gray-600 whitespace-pre-wrap">{message.content}</pre>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 工具图标映射
+    const toolIconComponents = {
+      'load_resume_data': null, // 不显示图标
+      'cv_reader_agent': null, // 使用 emoji 🔍
+      'cv_editor_agent': Edit,
+      'get_resume_structure': BarChart,
     };
 
-    const icon = toolIcons[message.tool] || '📄';
+    const toolEmojis = {
+      'cv_reader_agent': '🔍',
+    };
+
+    const IconComponent = toolIconComponents[message.tool];
+    const emoji = toolEmojis[message.tool];
 
     return (
       <div className="flex justify-start ml-10 my-2">
-        <div className={`${isSuccess ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'} border rounded-xl p-3 max-w-[90%] w-full shadow-sm`}>
+        <div className={`${isSuccess ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'} border rounded-xl p-3.5 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]`}>
           <div
             className="flex items-center justify-between cursor-pointer"
             onClick={() => setIsExpanded(!isExpanded)}
           >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{icon}</span>
+            <div className="flex items-center gap-3">
+              {isSuccess ? (
+                <div className="p-1.5 rounded-lg bg-green-100">
+                  <CheckCircle2 size={16} className="text-green-600" />
+                </div>
+              ) : emoji ? (
+                <div className="p-1.5 rounded-lg bg-blue-100">
+                  <span className="text-base">{emoji}</span>
+                </div>
+              ) : IconComponent ? (
+                <div className="p-1.5 rounded-lg bg-blue-100">
+                  <IconComponent size={16} className="text-blue-600" />
+                </div>
+              ) : null}
               <div className="flex items-center gap-2">
-                {isSuccess ? (
-                  <CheckCircle2 size={14} className="text-green-600" />
-                ) : (
-                  <FileText size={14} className="text-blue-600" />
-                )}
                 <span className={`font-medium text-sm ${isSuccess ? 'text-green-700' : 'text-blue-700'}`}>
                   {isSuccess ? '执行成功' : '执行结果'}
                 </span>
-                <span className="font-mono text-xs bg-white/50 px-2 py-0.5 rounded">{message.tool}</span>
+                <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
               </div>
             </div>
             <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} />
+              <ChevronDown size={16} className="opacity-60" />
             </div>
           </div>
 
@@ -587,14 +709,56 @@ const MessageItem = ({ message }) => {
     );
   }
 
-  // 最终答案 - 全新设计
+  // 问候消息 - 纯 markdown 渲染
+  if (message.type === 'greeting') {
+    return (
+      <div className="flex gap-3 my-4">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+          <Bot size={16} className="text-white" />
+        </div>
+        <div className="flex-1 prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-indigo-900 prose-a:text-indigo-700">
+          <ReactMarkdown>
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      </div>
+    );
+  }
+
+  // 最终答案 - 全新设计，增强 Markdown 渲染样式
   return (
     <div className="flex gap-3 my-4">
       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
         <Bot size={16} className="text-white" />
       </div>
-      <div className="flex-1 bg-white border border-gray-200 p-5 rounded-2xl rounded-tl-none shadow-md">
-        <ReactMarkdown className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-strong:text-gray-800">
+      <div className="flex-1 bg-gray-50 border border-gray-200 p-5 rounded-2xl rounded-tl-none shadow-md">
+        <ReactMarkdown
+          className="prose prose-sm max-w-none
+            prose-headings:text-gray-800 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
+            prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
+            prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-4
+            prose-strong:text-gray-800 prose-strong:font-semibold
+            prose-ul:list-disc prose-ul:ml-6 prose-ul:mb-4
+            prose-ol:list-decimal prose-ol:ml-6 prose-ol:mb-4
+            prose-li:text-gray-700 prose-li:mb-2
+            prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
+            prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic
+            prose-a:text-indigo-600 prose-a:underline hover:prose-a:text-indigo-800"
+          components={{
+            // 自定义占位符样式（如 summary, keywords 等）
+            p: ({node, children, ...props}) => {
+              const text = String(children);
+              if (text.includes('summary') || text.includes('keywords') || text.match(/^[a-z_]+$/)) {
+                return (
+                  <div className="bg-gray-100 border border-gray-300 rounded px-3 py-2 my-2 inline-block">
+                    <code className="text-gray-600 text-sm">{text}</code>
+                  </div>
+                );
+              }
+              return <p {...props}>{children}</p>;
+            }
+          }}
+        >
           {message.content}
         </ReactMarkdown>
       </div>

@@ -7,7 +7,7 @@ from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
 from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT
-from app.tool import BrowserUseTool, CVEditorAgentTool, CVReaderAgentTool, GetResumeStructure, LoadResumeData, Terminate, ToolCollection
+from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVOptimizerAgentTool, CVReaderAgentTool, GetResumeStructure, LoadResumeData, Terminate, ToolCollection
 from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
 from app.tool.python_execute import PythonExecute
@@ -38,6 +38,8 @@ class Manus(ToolCallAgent):
             AskHuman(),
             Terminate(),
             CVReaderAgentTool(),
+            CVAnalyzerAgentTool(),
+            CVOptimizerAgentTool(),
             CVEditorAgentTool(),
             GetResumeStructure(),
             LoadResumeData(),
