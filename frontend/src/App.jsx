@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Loader2, Terminal, FileText, ChevronDown, ChevronUp, X, Eye } from 'lucide-react';
+import { Send, Bot, User, Loader2, Terminal, FileText, ChevronDown, ChevronUp, X, Eye, Sparkles, Brain, Zap, CheckCircle2, AlertCircle, Wrench, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import HTMLTemplateRenderer from './components/HTMLTemplateRenderer';
 
@@ -271,15 +271,24 @@ function App() {
         {/* Header with Navigation */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white">
-              <Bot size={24} />
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all duration-300 ${
+              status === 'processing' ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-200' : 'bg-indigo-600'
+            }`}>
+              {status === 'processing' ? (
+                <Brain size={20} className="animate-pulse" />
+              ) : (
+                <Bot size={24} />
+              )}
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-800">OpenManus</h1>
+              <h1 className="text-xl font-bold text-gray-800">AI 简历助手</h1>
               <div className="flex items-center gap-2 text-xs">
-                <span className={`w-2 h-2 rounded-full ${status === 'disconnected' ? 'bg-red-500' : 'bg-green-500'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${
+                  status === 'disconnected' ? 'bg-red-500' :
+                  status === 'processing' ? 'bg-violet-500 animate-pulse' : 'bg-green-500'
+                }`}></span>
                 <span className="text-gray-500">
-                  {status === 'processing' ? '正在思考...' : (status === 'disconnected' ? '未连接' : '就绪')}
+                  {status === 'processing' ? '🧠 正在思考中...' : (status === 'disconnected' ? '❌ 未连接' : '✅ 就绪')}
                 </span>
               </div>
             </div>
@@ -287,7 +296,7 @@ function App() {
           <div className="flex items-center gap-2">
             <button
               onClick={loadSampleResume}
-              className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 rounded-lg hover:from-emerald-100 hover:to-teal-100 transition-all text-sm border border-emerald-200"
             >
               <FileText size={16} />
               <span>加载简历</span>
@@ -342,9 +351,21 @@ function App() {
           ))}
 
           {status === 'processing' && (
-            <div className="flex items-center gap-2 text-gray-400 text-sm ml-12 animate-pulse">
-              <Loader2 size={16} className="animate-spin" />
-              <span>OpenManus 正在思考...</span>
+            <div className="flex gap-3 my-4">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Brain size={16} className="text-white animate-pulse" />
+              </div>
+              <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 p-4 rounded-2xl rounded-tl-none shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
+                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
+                    <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
+                  </div>
+                  <span className="text-violet-700 text-sm font-medium">AI 正在思考中</span>
+                  <Sparkles size={14} className="text-violet-500 animate-pulse" />
+                </div>
+              </div>
             </div>
           )}
 
@@ -415,50 +436,76 @@ const MessageItem = ({ message }) => {
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="bg-indigo-600 text-white px-5 py-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-sm">
+        <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 text-white px-5 py-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md">
           {message.content}
         </div>
       </div>
     );
   }
 
-  // 步骤信息展示
+  // 步骤信息展示 - 更现代化的设计
   if (message.type === 'step') {
     return (
-      <div className="flex justify-center mb-2">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700">
-          <span className="font-medium">步骤 {message.step}:</span> {message.content}
+      <div className="flex justify-center my-3">
+        <div className="inline-flex items-center gap-2 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200 rounded-full px-4 py-2 text-sm text-violet-700 shadow-sm">
+          <Sparkles size={14} className="animate-pulse" />
+          <span className="font-medium">步骤 {message.step}</span>
+          <span className="text-violet-400">·</span>
+          <span>{message.content}</span>
         </div>
       </div>
     );
   }
 
-  // 工具调用展示
+  // 工具调用展示 - 增强版
   if (message.type === 'tool_call') {
     const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
+
+    // 工具图标映射
+    const toolIcons = {
+      'load_resume_data': '📋',
+      'cv_reader_agent': '🔍',
+      'cv_editor_agent': '✏️',
+      'get_resume_structure': '📊',
+      'create_chat_completion': '💬',
+    };
+
+    const toolColors = {
+      'load_resume_data': 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-700',
+      'cv_reader_agent': 'from-blue-50 to-cyan-50 border-blue-200 text-blue-700',
+      'cv_editor_agent': 'from-violet-50 to-purple-50 border-violet-200 text-violet-700',
+      'get_resume_structure': 'from-amber-50 to-orange-50 border-amber-200 text-amber-700',
+    };
+
+    const colorClass = toolColors[message.tool] || 'from-gray-50 to-slate-50 border-gray-200 text-gray-700';
+    const icon = toolIcons[message.tool] || '🔧';
+
     return (
-      <div className="flex justify-start ml-12 mb-2">
-        <div className={`border rounded-lg p-3 max-w-[90%] w-full ${
-          isCVTool
-            ? 'bg-green-50 border-green-200'
-            : 'bg-gray-100 border-gray-200'
-        }`}>
+      <div className="flex justify-start ml-10 my-2">
+        <div className={`bg-gradient-to-r ${colorClass} border rounded-xl p-3 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md`}>
           <div
-            className="flex items-center justify-between cursor-pointer text-gray-600 text-sm"
+            className="flex items-center justify-between cursor-pointer"
             onClick={() => setIsExpanded(!isExpanded)}
           >
             <div className="flex items-center gap-2">
-              <Terminal size={14} />
-              <span className="font-mono font-medium">
-                {isCVTool ? '📄 ' : ''}使用工具: {message.tool}
-              </span>
+              <span className="text-lg">{icon}</span>
+              <div>
+                <span className="font-semibold text-sm">调用工具</span>
+                <span className="ml-2 font-mono text-xs bg-white/50 px-2 py-0.5 rounded">{message.tool}</span>
+              </div>
             </div>
-            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <ChevronDown size={16} />
+            </div>
           </div>
 
           {isExpanded && (
-            <div className="mt-2 bg-gray-900 text-gray-100 p-3 rounded text-xs font-mono overflow-x-auto">
-              <pre>{typeof message.args === 'string'
+            <div className="mt-3 bg-gray-900 text-gray-100 p-4 rounded-lg text-xs font-mono overflow-x-auto shadow-inner">
+              <div className="flex items-center gap-2 text-gray-400 mb-2 pb-2 border-b border-gray-700">
+                <Terminal size={12} />
+                <span>参数</span>
+              </div>
+              <pre className="text-green-400">{typeof message.args === 'string'
                 ? (message.args.startsWith('{') || message.args.startsWith('[')
                     ? JSON.stringify(JSON.parse(message.args), null, 2)
                     : message.args)
@@ -470,32 +517,49 @@ const MessageItem = ({ message }) => {
     );
   }
 
-  // 工具结果展示
+  // 工具结果展示 - 增强版
   if (message.type === 'tool_result') {
     const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
+    const isSuccess = message.content && (message.content.includes('✅') || message.content.includes('Successfully'));
+
+    const toolIcons = {
+      'load_resume_data': '📋',
+      'cv_reader_agent': '🔍',
+      'cv_editor_agent': '✏️',
+      'get_resume_structure': '📊',
+    };
+
+    const icon = toolIcons[message.tool] || '📄';
+
     return (
-      <div className="flex justify-start ml-12 mb-2">
-        <div className={`border rounded-lg p-3 max-w-[90%] w-full ${
-          isCVTool
-            ? 'bg-green-50 border-green-200'
-            : 'bg-blue-50 border border-blue-100'
-        }`}>
+      <div className="flex justify-start ml-10 my-2">
+        <div className={`${isSuccess ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'} border rounded-xl p-3 max-w-[90%] w-full shadow-sm`}>
           <div
-            className="flex items-center justify-between cursor-pointer text-blue-700 text-sm"
+            className="flex items-center justify-between cursor-pointer"
             onClick={() => setIsExpanded(!isExpanded)}
           >
             <div className="flex items-center gap-2">
-              <FileText size={14} />
-              <span className="font-medium">
-                {isCVTool ? '📄 ' : ''}工具执行结果: {message.tool}
-              </span>
+              <span className="text-lg">{icon}</span>
+              <div className="flex items-center gap-2">
+                {isSuccess ? (
+                  <CheckCircle2 size={14} className="text-green-600" />
+                ) : (
+                  <FileText size={14} className="text-blue-600" />
+                )}
+                <span className={`font-medium text-sm ${isSuccess ? 'text-green-700' : 'text-blue-700'}`}>
+                  {isSuccess ? '执行成功' : '执行结果'}
+                </span>
+                <span className="font-mono text-xs bg-white/50 px-2 py-0.5 rounded">{message.tool}</span>
+              </div>
             </div>
-            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <ChevronDown size={16} />
+            </div>
           </div>
 
           {isExpanded && (
-            <div className="mt-2 bg-white border border-blue-100 p-3 rounded text-xs text-gray-600 font-mono overflow-x-auto max-h-64 overflow-y-auto">
-              <pre>{message.content}</pre>
+            <div className={`mt-3 bg-white border ${isSuccess ? 'border-green-100' : 'border-blue-100'} p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner`}>
+              <pre className={isSuccess ? 'text-green-700' : 'text-gray-600 whitespace-pre-wrap'}>{message.content}</pre>
             </div>
           )}
         </div>
@@ -503,15 +567,19 @@ const MessageItem = ({ message }) => {
     );
   }
 
-  // 思考过程
+  // 思考过程 - 全新设计，参考 Claude/Cursor
   if (message.type === 'thought') {
     return (
-      <div className="flex gap-4">
-        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-          <Bot size={18} className="text-gray-500" />
+      <div className="flex gap-3 my-3">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+          <Brain size={16} className="text-white" />
         </div>
-        <div className="flex-1 bg-white border border-gray-100 p-4 rounded-2xl rounded-tl-none shadow-sm text-gray-600 italic">
-          <ReactMarkdown className="prose prose-sm max-w-none text-gray-600">
+        <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 p-4 rounded-2xl rounded-tl-none shadow-sm">
+          <div className="flex items-center gap-2 mb-2 text-violet-700">
+            <Sparkles size={14} className="text-violet-500" />
+            <span className="text-xs font-semibold uppercase tracking-wide text-violet-500">思考过程</span>
+          </div>
+          <ReactMarkdown className="prose prose-sm max-w-none text-gray-700">
             {message.content}
           </ReactMarkdown>
         </div>
@@ -519,14 +587,14 @@ const MessageItem = ({ message }) => {
     );
   }
 
-  // 最终答案
+  // 最终答案 - 全新设计
   return (
-    <div className="flex gap-4">
-      <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
-        <Bot size={18} className="text-indigo-600" />
+    <div className="flex gap-3 my-4">
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+        <Bot size={16} className="text-white" />
       </div>
-      <div className="flex-1 bg-white border border-gray-100 p-5 rounded-2xl rounded-tl-none shadow-sm">
-        <ReactMarkdown className="prose prose-sm max-w-none">
+      <div className="flex-1 bg-white border border-gray-200 p-5 rounded-2xl rounded-tl-none shadow-md">
+        <ReactMarkdown className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-strong:text-gray-800">
           {message.content}
         </ReactMarkdown>
       </div>
