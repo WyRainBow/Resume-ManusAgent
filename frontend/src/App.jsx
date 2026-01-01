@@ -191,9 +191,15 @@ function App() {
           content: data.result
         };
 
-        // 如果是 CVEditor 工具执行成功，刷新简历数据
-        if (data.tool === 'cv_editor_agent' && data.result && data.result.includes('✅')) {
-          refreshResumeData();
+        // 如果是 CV 相关工具执行成功，刷新简历数据
+        const isCVTool = data.tool === 'cv_editor_agent' || data.tool === 'load_resume_data';
+        if (isCVTool && data.result && (
+          data.result.includes('✅') ||
+          data.result.includes('Successfully loaded') ||
+          data.result.includes('Candidate:')
+        )) {
+          // 给后端一点时间处理数据
+          setTimeout(() => refreshResumeData(), 300);
         }
 
         return [...newMessages, toolResultMsg];

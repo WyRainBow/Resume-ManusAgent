@@ -66,8 +66,42 @@ _global_resume_data = {}
 
 @app.get("/api/resume")
 async def get_resume_data():
-    """获取当前加载的简历数据"""
+    """获取当前加载的简历数据
+
+    优先从工具获取，确保数据是最新的
+    """
+    from app.tool.cv_reader_agent_tool import CVReaderAgentTool
+
+    # 从工具获取最新数据
+    tool_data = CVReaderAgentTool.get_resume_data()
+    if tool_data and isinstance(tool_data, dict) and tool_data.get("basic"):
+        # 转换为纯字典，移除任何 Pydantic 特殊属性
+        return {"data": _clean_resume_data(tool_data)}
+
+    # 如果工具没有数据，返回全局变量（兜底）
     return {"data": _global_resume_data}
+
+
+def _clean_resume_data(data: dict) -> dict:
+    """清理简历数据，确保可以 JSON 序列化
+
+    移除 Pydantic 模型的私有属性
+    """
+    if not isinstance(data, dict):
+        return data
+
+    result = {}
+    for key, value in data.items():
+        # 跳过私有属性和特殊属性
+        if key.startswith("_") or key in ["__pydantic_private__", "__pydantic_extra__"]:
+            continue
+        if isinstance(value, dict):
+            result[key] = _clean_resume_data(value)
+        elif isinstance(value, list):
+            result[key] = [_clean_resume_data(item) if isinstance(item, dict) else item for item in value]
+        else:
+            result[key] = value
+    return result
 
 
 @app.post("/api/resume")

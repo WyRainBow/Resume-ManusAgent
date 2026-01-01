@@ -196,12 +196,13 @@ Use this tool when:
                 "activeSection": "basic"
             }
 
-            # 设置全局简历数据
+            # 先设置到 CVReaderAgentTool
             CVReaderAgentTool.set_resume_data(sample_resume)
 
-            # 同时设置到 CVEditorAgentTool
+            # 然后让 CVEditorAgentTool 使用同一个引用
+            # 这样 CVEditor 的修改会直接影响到 CVReader 的数据
             from app.tool.cv_editor_agent_tool import CVEditorAgentTool
-            CVEditorAgentTool.set_resume_data(sample_resume)
+            CVEditorAgentTool.set_resume_data(CVReaderAgentTool._global_resume_data)
 
             basic = sample_resume["basic"]
             return ToolResult(

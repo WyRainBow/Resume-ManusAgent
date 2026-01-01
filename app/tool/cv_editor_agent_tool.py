@@ -62,28 +62,28 @@ Examples:
         "required": ["path", "action"]
     }
 
-    # 全局简历数据引用
-    _global_resume_data: Optional[dict] = None
+    # 全局简历数据引用（通过 server.py 设置）
+    _global_resume_data_ref: Optional[dict] = None
 
     class Config:
         arbitrary_types_allowed = True
 
     @classmethod
     def set_resume_data(cls, resume_data: dict):
-        """设置全局简历数据引用"""
-        cls._global_resume_data = resume_data
+        """设置全局简历数据引用 - 这会被 server.py 调用"""
+        cls._global_resume_data_ref = resume_data
 
     @classmethod
     def get_resume_data(cls) -> Optional[dict]:
         """获取当前简历数据"""
-        return cls._global_resume_data
+        return cls._global_resume_data_ref
 
     async def execute(self, path: str, action: str, value: Any = None) -> ToolResult:
         """执行简历编辑
 
         内部创建 CVEditor Agent 并运行它来处理编辑任务
         """
-        if not self._global_resume_data:
+        if not self._global_resume_data_ref:
             return ToolResult(
                 output="No resume data loaded. Please use load_resume_data tool first."
             )
@@ -96,7 +96,7 @@ Examples:
             cv_editor = CVEditor()
 
             # 加载简历数据（传入引用，所以修改会直接影响原始数据）
-            cv_editor.load_resume(self._global_resume_data)
+            cv_editor.load_resume(self._global_resume_data_ref)
 
             # 执行编辑操作
             result = await cv_editor.edit_resume(path, action, value)
