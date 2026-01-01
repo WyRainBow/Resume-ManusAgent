@@ -60,6 +60,33 @@ async def health_check():
     return {"status": "ok"}
 
 
+# 全局简历数据存储（用于前后端同步）
+_global_resume_data = {}
+
+
+@app.get("/api/resume")
+async def get_resume_data():
+    """获取当前加载的简历数据"""
+    return {"data": _global_resume_data}
+
+
+@app.post("/api/resume")
+async def set_resume_data(data: dict):
+    """设置简历数据"""
+    global _global_resume_data
+    _global_resume_data = data
+
+    # 同步更新到 CVReaderAgentTool
+    from app.tool.cv_reader_agent_tool import CVReaderAgentTool
+    CVReaderAgentTool.set_resume_data(_global_resume_data)
+
+    # 同步更新到 CVEditorAgentTool
+    from app.tool.cv_editor_agent_tool import CVEditorAgentTool
+    CVEditorAgentTool.set_resume_data(_global_resume_data)
+
+    return {"success": True, "message": "Resume data updated"}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -186,18 +213,38 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": final_answer
                     })
 
+            except WebSocketDisconnect:
+                # 客户端主动断开连接，正常情况，不需要记录错误
+                break
             except Exception as e:
-                logger.error(f"Error: {e}")
+                logger.error(f"Error in main loop: {e}")
                 import traceback
                 traceback.print_exc()
-                await websocket.send_json({"type": "error", "content": str(e)})
+                try:
+                    await websocket.send_json({"type": "error", "content": str(e)})
+                except Exception:
+                    # 连接已关闭，无法发送错误消息
+                    pass
                 # 重置状态以便继续使用
                 agent.state = AgentState.IDLE
                 agent.current_step = 0
 
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        # 客户端断开连接，正常清理
+        if websocket in active_connections:
+            active_connections.remove(websocket)
         await agent.cleanup()
+    except Exception as e:
+        # 捕获其他未预期的异常
+        logger.error(f"Unexpected error in websocket endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+        try:
+            await agent.cleanup()
+        except Exception:
+            pass
 
 # 获取项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

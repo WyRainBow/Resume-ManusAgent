@@ -118,8 +118,17 @@ function App() {
     };
 
     socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      handleMessage(data);
+      try {
+        const data = JSON.parse(event.data);
+        handleMessage(data);
+      } catch (e) {
+        console.error('Failed to parse message:', e, event.data);
+      }
+    };
+
+    socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setStatus('disconnected');
     };
 
     socket.onclose = () => {
@@ -162,7 +171,7 @@ function App() {
       // 如果是工具调用 - 检测是否是 CV 相关工具
       if (data.type === 'tool_call') {
         // 如果是加载简历或分析简历的工具，自动显示简历面板
-        if (data.tool === 'load_resume_data' || data.tool === 'cv_reader_agent') {
+        if (data.tool === 'load_resume_data' || data.tool === 'cv_reader_agent' || data.tool === 'cv_editor_agent') {
           setShowResumePanel(true);
         }
         return [...newMessages, {
@@ -175,12 +184,19 @@ function App() {
 
       // 如果是工具结果
       if (data.type === 'tool_result') {
-        return [...newMessages, {
+        const toolResultMsg = {
           role: 'system',
           type: 'tool_result',
           tool: data.tool,
           content: data.result
-        }];
+        };
+
+        // 如果是 CVEditor 工具执行成功，刷新简历数据
+        if (data.tool === 'cv_editor_agent' && data.result && data.result.includes('✅')) {
+          refreshResumeData();
+        }
+
+        return [...newMessages, toolResultMsg];
       }
 
       // 如果是最终答案
@@ -223,6 +239,19 @@ function App() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ prompt: '请帮我加载示例简历' }));
       setStatus('processing');
+    }
+  };
+
+  const refreshResumeData = async () => {
+    // 从后端获取最新的简历数据
+    try {
+      const response = await fetch('/api/resume');
+      const data = await response.json();
+      if (data.data && Object.keys(data.data).length > 0) {
+        setResumeData(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to refresh resume data:', error);
     }
   };
 
@@ -290,8 +319,12 @@ function App() {
                   >请介绍一下这位候选人</li>
                   <li
                     className="cursor-pointer hover:text-indigo-500 underline"
-                    onClick={() => setInput('这位候选人有哪些技能？')}
-                  >这位候选人有哪些技能？</li>
+                    onClick={() => setInput('把我的邮箱改成 newemail@example.com')}
+                  >把我的邮箱改成 newemail@example.com</li>
+                  <li
+                    className="cursor-pointer hover:text-indigo-500 underline"
+                    onClick={() => setInput('帮我添加一个技能：Python')}
+                  >帮我添加一个技能：Python</li>
                 </ul>
               </div>
             </div>
@@ -395,7 +428,7 @@ const MessageItem = ({ message }) => {
 
   // 工具调用展示
   if (message.type === 'tool_call') {
-    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent';
+    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
     return (
       <div className="flex justify-start ml-12 mb-2">
         <div className={`border rounded-lg p-3 max-w-[90%] w-full ${
@@ -432,7 +465,7 @@ const MessageItem = ({ message }) => {
 
   // 工具结果展示
   if (message.type === 'tool_result') {
-    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent';
+    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
     return (
       <div className="flex justify-start ml-12 mb-2">
         <div className={`border rounded-lg p-3 max-w-[90%] w-full ${

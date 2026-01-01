@@ -51,9 +51,15 @@ The CVReader Agent will analyze the resume and provide detailed, context-aware a
     class Config:
         arbitrary_types_allowed = True
 
-    def set_resume_data(self, resume_data: dict):
+    @classmethod
+    def set_resume_data(cls, resume_data: dict):
         """设置全局简历数据"""
-        CVReaderAgentTool._global_resume_data = resume_data
+        cls._global_resume_data = resume_data
+
+    @classmethod
+    def get_resume_data(cls) -> Optional[dict]:
+        """获取全局简历数据"""
+        return cls._global_resume_data
 
     async def execute(self, question: str) -> ToolResult:
         """执行简历分析
@@ -192,6 +198,10 @@ Use this tool when:
 
             # 设置全局简历数据
             CVReaderAgentTool.set_resume_data(sample_resume)
+
+            # 同时设置到 CVEditorAgentTool
+            from app.tool.cv_editor_agent_tool import CVEditorAgentTool
+            CVEditorAgentTool.set_resume_data(sample_resume)
 
             basic = sample_resume["basic"]
             return ToolResult(
