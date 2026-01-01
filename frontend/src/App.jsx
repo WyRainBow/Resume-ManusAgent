@@ -311,26 +311,27 @@ function App() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
               <Bot size={64} className="mb-4 opacity-20" />
-              <p className="text-lg">准备好为您服务。请输入您的任务。</p>
+              <p className="text-lg">您的 AI 简历助手</p>
+              <p className="text-sm text-gray-400 mt-2">告诉我您的信息，帮您生成专业简历</p>
               <div className="mt-6 text-sm text-gray-400">
-                <p>试着说：</p>
+                <p>试试说：</p>
                 <ul className="mt-2 space-y-1">
                   <li
                     className="cursor-pointer hover:text-indigo-500 underline"
-                    onClick={() => setInput('请帮我加载示例简历')}
-                  >请帮我加载示例简历</li>
+                    onClick={() => setInput('帮我加载简历模板')}
+                  >帮我加载简历模板</li>
                   <li
                     className="cursor-pointer hover:text-indigo-500 underline"
-                    onClick={() => setInput('请介绍一下这位候选人')}
-                  >请介绍一下这位候选人</li>
+                    onClick={() => setInput('我叫韦宇，是一名前端工程师')}
+                  >我叫韦宇，是一名前端工程师</li>
                   <li
                     className="cursor-pointer hover:text-indigo-500 underline"
-                    onClick={() => setInput('把我的邮箱改成 newemail@example.com')}
-                  >把我的邮箱改成 newemail@example.com</li>
+                    onClick={() => setInput('把我的邮箱改成 weiyu@example.com')}
+                  >把我的邮箱改成 weiyu@example.com</li>
                   <li
                     className="cursor-pointer hover:text-indigo-500 underline"
-                    onClick={() => setInput('帮我添加一个技能：Python')}
-                  >帮我添加一个技能：Python</li>
+                    onClick={() => setInput('帮我添加一段工作经历：在字节跳动做前端开发')}
+                  >帮我添加一段工作经历</li>
                 </ul>
               </div>
             </div>
@@ -362,7 +363,7 @@ function App() {
                   handleSubmit(e);
                 }
               }}
-              placeholder="输入您的指令...（试试：请帮我加载示例简历）"
+              placeholder="告诉我您的信息，帮您生成简历...（例如：我叫韦宇，是一名前端工程师）"
               className="w-full pl-4 pr-12 py-3 bg-gray-100 border-0 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none min-h-[56px] max-h-32"
               rows="1"
             />

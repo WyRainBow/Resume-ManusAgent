@@ -8,6 +8,7 @@ Manus 可以委托简历修改任务给这个工具。
 from typing import Optional, Any
 import json
 from app.tool.base import BaseTool, ToolResult
+from app.llm import LLM
 
 
 class CVEditorAgentTool(BaseTool):
@@ -20,17 +21,17 @@ class CVEditorAgentTool(BaseTool):
     - 用户要求修改简历中的某个字段
     - 用户要求添加新的工作经历
     - 用户要求删除某个项目
-    - 用户要求重新格式化简历
+    - 用户要求更新个人信息
     """
 
     name: str = "cv_editor_agent"
     description: str = """Edit and modify CV/Resume data through the CVEditor Agent.
 
 Use this tool when the user wants to:
-- Update personal information (name, email, phone, title)
-- Add new entries (education, experience, projects, awards)
+- Update personal information (姓名、邮箱、电话、求职意向)
+- Add new entries (教育经历、工作经历、项目经验、获奖情况)
 - Delete unnecessary information
-- Reformat or restructure resume data
+- Modify existing resume content
 
 The tool requires:
 - path: JSON path to the field (e.g., 'basic.name', 'education[0].school')
@@ -38,9 +39,11 @@ The tool requires:
 - value: New value (required for update/add operations)
 
 Examples:
-- Update name: path='basic.name', action='update', value='张三'
+- Update name: path='basic.name', action='update', value='韦宇'
 - Add education: path='education', action='add', value={school:'北京大学', major:'计算机', ...}
-- Delete item: path='experience[1]', action='delete'"""
+- Delete item: path='experience[1]', action='delete'
+
+此工具用于帮助求职者编辑和生成自己的简历内容。"""
 
     parameters: dict = {
         "type": "object",

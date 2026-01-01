@@ -13,25 +13,25 @@ class CVReaderAgentTool(BaseTool):
     """CVReader Agent 工具
 
     这是一个特殊的工具，它内部使用 CVReader Agent 来处理简历相关任务。
-    Manus 可以委托简历分析任务给这个工具，CVReader 会以 Agent 的方式处理。
+    Manus 可以委托简历任务给这个工具，CVReader 会以 Agent 的方式处理。
 
     使用场景：
-    - 用户要求分析简历
-    - 用户要求介绍候选人
-    - 用户要求评估技能
+    - 用户要求查看/了解当前简历内容
+    - 用户要求介绍简历情况
+    - 用户要求查看某个模块的内容
     """
 
     name: str = "cv_reader_agent"
-    description: str = """Delegate CV/Resume analysis tasks to the CVReader Agent.
+    description: str = """Delegate CV/Resume queries to the CVReader Agent.
 
-Use this tool when the user asks questions about a resume or CV, such as:
-- "Tell me about this candidate"
-- "Analyze this resume"
-- "What are the candidate's skills?"
-- "Is this candidate a good fit for X position?"
-- "Summarize the work experience"
+Use this tool when the user asks to view or understand their resume, such as:
+- "看看我的简历"
+- "我的工作经历有哪些"
+- "介绍一下我的简历"
+- "简历里写了什么"
+- "我目前的技能是什么"
 
-The CVReader Agent will analyze the resume and provide detailed, context-aware answers.
+The CVReader Agent will read the resume and provide detailed information.
 """
 
     parameters: dict = {
@@ -94,16 +94,19 @@ The CVReader Agent will analyze the resume and provide detailed, context-aware a
 class LoadResumeData(BaseTool):
     """加载简历数据的工具
 
-    当用户想要加载或切换简历时使用此工具
+    当用户想要开始创建简历或查看简历模板时使用此工具
     """
 
     name: str = "load_resume_data"
-    description: str = """Load or switch to a different resume for analysis.
+    description: str = """Load a resume template for the user to start creating/editing their resume.
 
 Use this tool when:
-- User wants to load a sample resume
-- User wants to switch to a different resume
-- Before any cv_reader_agent tool call if no resume is loaded"""
+- User wants to start creating their resume (开始写简历)
+- User wants to see the resume template (看看简历模板)
+- User wants to load a sample resume as reference (加载示例简历)
+- Before any cv_editor_agent or cv_reader_agent tool call if no resume is loaded
+
+此工具用于为求职者加载简历模板，方便后续编辑和生成。"""
 
     parameters: dict = {
         "type": "object",
