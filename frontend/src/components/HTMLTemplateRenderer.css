@@ -1,0 +1,153 @@
+/**
+ * HTML 模板简历渲染器样式
+ */
+
+.html-template-container {
+  background: #fff;
+  width: 100%;
+  padding: 32px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2937;
+}
+
+/* 模板头部 */
+.template-header {
+  padding-bottom: 20px;
+  border-bottom: 2px solid #4f46e5;
+  margin-bottom: 24px;
+}
+
+.header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.header-left h1.candidate-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.candidate-title {
+  font-size: 16px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.header-right {
+  text-align: right;
+}
+
+.header-right .info-item {
+  font-size: 13px;
+  color: #4b5563;
+  margin-bottom: 4px;
+}
+
+.employment-status {
+  display: inline-block;
+  background: #e0e7ff;
+  color: #4f46e5;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 模板内容 */
+.template-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 模块 */
+.template-section {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.section-content {
+  font-size: 14px;
+}
+
+/* 项目条目 */
+.item {
+  margin-bottom: 12px;
+}
+
+.item:last-child {
+  margin-bottom: 0;
+}
+
+.item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+}
+
+.item-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.item-subtitle {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.item-date {
+  font-size: 12px;
+  color: #9ca3af;
+  white-space: nowrap;
+  margin-left: 12px;
+}
+
+.item-description {
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.item-description p {
+  margin: 0 0 4px 0;
+}
+
+.item-description p:last-child {
+  margin-bottom: 0;
+}
+
+.item-link {
+  display: inline-block;
+  font-size: 12px;
+  color: #4f46e5;
+  text-decoration: none;
+  margin-top: 4px;
+}
+
+.item-link:hover {
+  text-decoration: underline;
+}

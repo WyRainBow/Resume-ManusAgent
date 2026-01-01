@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>韦宇 - 个人简历</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+        }
+        
+        body {
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+        
+        .resume-container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background-color: white;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1a73e8, #0d47a1);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 36px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .header .title {
+            font-size: 22px;
+            margin-bottom: 20px;
+            opacity: 0.9;
+        }
+        
+        .contact-info {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 30px;
+            margin-top: 20px;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .contact-item i {
+            font-size: 18px;
+        }
+        
+        .section {
+            padding: 30px 40px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .section:last-child {
+            border-bottom: none;
+        }
+        
+        .section-title {
+            color: #1a73e8;
+            font-size: 24px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #1a73e8;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-title i {
+            font-size: 20px;
+        }
+        
+        .education-item, .experience-item {
+            margin-bottom: 25px;
+        }
+        
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+        
+        .item-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .item-subtitle {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .item-time {
+            color: #1a73e8;
+            font-weight: 500;
+            background-color: #e8f0fe;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        .item-content {
+            color: #555;
+            line-height: 1.8;
+        }
+        
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .skill-category {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #1a73e8;
+        }
+        
+        .skill-category h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .skill-list {
+            list-style-type: none;
+        }
+        
+        .skill-list li {
+            padding: 8px 0;
+            border-bottom: 1px dashed #ddd;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .skill-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .skill-name {
+            color: #444;
+        }
+        
+        .skill-level {
+            color: #1a73e8;
+            font-weight: 500;
+        }
+        
+        .project-item {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #34a853;
+        }
+        
+        .project-title {
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .project-time {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .project-desc {
+            color: #555;
+            line-height: 1.7;
+        }
+        
+        .strengths-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .strength-item {
+            background-color: #e8f0fe;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .strength-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .strength-item i {
+            color: #1a73e8;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .strength-item h4 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .strength-item p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px 40px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            border-top: 1px solid #eee;
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                padding: 30px 20px;
+            }
+            
+            .header h1 {
+                font-size: 28px;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+            
+            .contact-info {
+                flex-direction: column;
+                gap: 15px;
+                align-items: center;
+            }
+            
+            .item-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .item-time {
+                align-self: flex-start;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="resume-container">
+        <!-- 头部信息 -->
+        <div class="header">
+            <h1>韦宇</h1>
+            <div class="title">后端开发工程师</div>
+            <div class="contact-info">
+                <div class="contact-item">
+                    <i class="fas fa-phone"></i>
+                    <span>18933549212</span>
+                </div>
+                <div class="contact-item">
+                    <i class="fas fa-envelope"></i>
+                    <span>3658043236@qq.com</span>
+                </div>
+                <div class="contact-item">
+                    <i class="fas fa-user"></i>
+                    <span>22岁</span>
+                </div>
+                <div class="contact-item">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <span>广州</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 教育背景 -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-graduation-cap"></i>
+                <span>教育背景</span>
+            </div>
+            <div class="education-item">
+                <div class="item-header">
+                    <div>
+                        <div class="item-title">广东药科大学</div>
+                        <div class="item-subtitle">计算机科学与技术专业 | 本科</div>
+                    </div>
+                    <div class="item-time">2022.09 - 2026.06</div>
+                </div>
+                <div class="item-content">
+                    <p>主修课程：数据结构与算法、操作系统、计算机网络、数据库系统、软件工程、Java程序设计、Python编程等</p>
+                    <p>GPA：3.6/4.0（专业排名前15%）</p>
+                    <p>荣誉奖项：校级优秀学生奖学金（2023、2024）</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实习经历 -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-briefcase"></i>
+                <span>实习经历</span>
+            </div>
+            
+            <div class="experience-item">
+                <div class="item-header">
+                    <div>
+                        <div class="item-title">腾讯云 - 后端开发实习生</div>
+                        <div class="item-subtitle">深圳</div>
+                    </div>
+                    <div class="item-time">2025.06 - 2025.10</div>
+                </div>
+                <div class="item-content">
+                    <ul>
+                        <li>参与腾讯云微服务平台的后端开发与维护工作</li>
+                        <li>负责API接口设计与开发，使用Spring Boot框架实现RESTful API</li>
+                        <li>优化数据库查询性能，将关键接口响应时间降低30%</li>
+                        <li>参与代码审查和技术文档编写，确保代码质量和可维护性</li>
+                        <li>协助团队完成微服务架构的部署和监控配置</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="experience-item">
+                <div class="item-header">
+                    <div>
+                        <div class="item-title">深言科技 - AI应用开发实习生</div>
+                        <div class="item-subtitle">深圳</div>
+                    </div>
+                    <div class="item-time">2025.03 - 2025.06</div>
+                </div>
+                <div class="item-content">
+                    <ul>
+                        <li>参与AI应用后端系统的开发，集成大语言模型API</li>
+                        <li>使用Python Flask框架开发AI服务接口，支持文本处理和分析功能</li>
+                        <li>设计并实现用户请求队列管理系统，提高系统并发处理能力</li>
+                        <li>协助优化模型推理性能，减少服务响应延迟</li>
+                        <li>参与数据预处理管道的开发和维护</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="experience-item">
+                <div class="item-header">
+                    <div>
+                        <div class="item-title">美的集团 - Java开发实习生</div>
+                        <div class="item-subtitle">佛山</div>
+                    </div>
+                    <div class="item-time">2024.12 - 2025.03</div>
+                </div>
+                <div class="item-content">
+                    <ul>
+                        <li>参与美的智能家居平台后端开发</li>
+                        <li>使用Spring Cloud微服务框架开发设备管理模块</li>
+                        <li>实现设备状态监控和数据采集功能，支持实时数据推送</li>
+                        <li>参与数据库设计，使用MySQL存储设备数据和用户信息</li>
+                        <li>编写单元测试和集成测试，确保代码质量</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 技术技能 -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-code"></i>
+                <span>技术技能</span>
+            </div>
+            <div class="skills-grid">
+                <div class="skill-category">
+                    <h4>编程语言</h4>
+                    <ul class="skill-list">
+                        <li>
+                            <span class="skill-name">Java</span>
+                            <span class="skill-level">熟练掌握</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">Python</span>
+                            <span class="skill-level">熟悉</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">SQL</span>
+                            <span class="skill-level">熟练</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">JavaScript/TypeScript</span>
+                            <span class="skill-level">了解</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="skill-category">
+                    <h4>后端技术</h4>
+                    <ul class="skill-list">
+                        <li>
+                            <span class="skill-name">Spring Boot/Cloud</span>
+                            <span class="skill-level">熟练掌握</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">Flask/Django</span>
+                            <span class="skill-level">熟悉</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">MySQL/PostgreSQL</span>
+                            <span class="skill-level">熟练</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">Redis</span>
+                            <span class="skill-level">熟悉</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <div class="skill-category">
+                    <h4>开发工具</h4>
+                    <ul class="skill-list">
+                        <li>
+                            <span class="skill-name">Git</span>
+                            <span class="skill-level">熟练</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">Docker</span>
+                            <span class="skill-level">了解</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">IntelliJ IDEA/VS Code</span>
+                            <span class="skill-level">熟练</span>
+                        </li>
+                        <li>
+                            <span class="skill-name">Maven/Gradle</span>
+                            <span class="skill-level">熟悉</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 项目经验 -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-project-diagram"></i>
+                <span>项目经验</span>
+            </div>
+            
+            <div class="project-item">
+                <div class="project-title">校园二手交易平台</div>
+                <div class="project-time">2024年3月 - 2024年6月 | 个人项目</div>
+                <div class="project-desc">
+                    <p>使用Spring Boot + Vue.js开发的全栈项目，实现用户注册登录、商品发布、在线聊天、订单管理等功能。集成支付宝沙箱支付接口，使用Redis缓存热门商品数据提高查询性能，部署到阿里云服务器并使用Nginx反向代理。</p>
+                </div>
+            </div>
+            
+            <div class="project-item">
+                <div class="project-title">智能学习助手系统</div>
+                <div class="project-time">2023年9月 - 2023年12月 | 课程设计</div>
+                <div class="project-desc">
+                    <p>基于Python Flask开发的AI学习辅助系统，集成OpenAI API实现智能问答功能。实现学习计划制定、进度跟踪、知识点推荐等功能，使用SQLite存储用户学习数据，实现简单的用户行为分析算法。</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 个人优势 -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-star"></i>
+                <span>个人优势</span>
+            </div>
+            <div class="strengths-grid">
+                <div class="strength-item">
+                    <i class="fas fa-brain"></i>
+                    <h4>扎实的技术基础</h4>
+                    <p>具备扎实的计算机科学理论基础和良好的编程能力</p>
+                </div>
+                <div class="strength-item">
+                    <i class="fas fa-bolt"></i>
+                    <h4>快速学习能力</h4>
+                    <p>能够在短时间内掌握新技术并应用到实际项目中</p>
+                </div>
+                <div class="strength-item">
+                    <i class="fas fa-users"></i>
+                    <h4>团队协作精神</h4>
+                    <p>在多个实习项目中积累了良好的团队协作经验</p>
+                </div>
+                <div class="strength-item">
+                    <i class="fas fa-puzzle-piece"></i>
+                    <h4>问题解决能力</h4>
+                    <p>善于分析和解决复杂的技术问题</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 自我评价 -->
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-comment"></i>
+                <span>自我评价</span>
+            </div>
+            <div class="item-content">
+                <p>作为一名计算机科学与技术专业的应届毕业生，我对后端开发充满热情。通过在校期间的学习和多次实习经历，我积累了扎实的编程基础和实际项目经验。我善于学习新技术，能够快速适应不同的开发环境和工作要求。我期待加入一个优秀的团队，在实战中不断提升自己，为公司创造价值。</p>
+            </div>
+        </div>
+        
+        <!-- 页脚 -->
+        <div class="footer">
+            <p>更新日期：2025年10月 | 本简历由韦宇提供</p>
+        </div>
+    </div>
+</body>
+</html>
