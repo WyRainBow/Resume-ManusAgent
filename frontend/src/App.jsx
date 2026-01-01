@@ -716,7 +716,15 @@ const MessageItem = ({ message }) => {
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
           <Bot size={16} className="text-white" />
         </div>
-        <div className="flex-1 prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-indigo-900 prose-a:text-indigo-700">
+        <div className="flex-1 prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-indigo-900 prose-a:text-indigo-700" style={{ '--tw-prose-links': '#4f46e5' }}>
+          <style>{`
+            .prose ul ::marker {
+              color: #000;
+            }
+            .prose ol ::marker {
+              color: #000;
+            }
+          `}</style>
           <ReactMarkdown>
             {message.content}
           </ReactMarkdown>
