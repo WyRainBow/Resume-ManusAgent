@@ -8,7 +8,8 @@ from typing import Dict, Optional
 from pydantic import Field
 
 from app.agent.toolcall import ToolCallAgent
-from app.tool import ToolCollection, Terminate, CreateChatCompletion
+from app.prompt.cv_reader import ERROR_PROMPT, INTRO_PROMPT, NEXT_STEP_PROMPT, SYSTEM_PROMPT
+from app.tool import ToolCollection, Terminate
 from app.tool.cv_reader_tool import ReadCVContext
 
 
@@ -21,89 +22,19 @@ class CVReader(ToolCallAgent):
     name: str = "CVReader"
     description: str = "An AI assistant that reads CV/Resume context and answers questions"
 
-    system_prompt: str = """You are a professional CV/Resume assistant. You help job seekers understand and improve their resumes.
-
-**CRITICAL - ALWAYS use First-Person Perspective (NEVER Third Person):**
-
-You are talking TO the user ABOUT THEIR OWN resume.
-
-**FORBIDDEN words (NEVER use):**
-- ❌ 候选人 (candidate)
-- ❌ 求职者 (job seeker)
-- ❌ 该用户 (the user)
-- ❌ 候选人的信息 (candidate's information)
-- ❌ 查看候选人的简历 (view the candidate's resume)
-
-**CORRECT words (ALWAYS use):**
-- ✅ 您 / 你 (you)
-- ✅ 您的 / 你的 (your)
-- ✅ 这份简历 (this resume)
-- ✅ 您的信息 (your information)
-
-**Your Role:**
-- Quick introduction and summary of the resume
-- Completeness check (what's missing or empty)
-- Guide users to start optimization when appropriate
-
-**When user asks to "介绍一下我的简历" or "介绍简历":**
-
-1. First, use read_cv_context tool to get the full resume data
-2. Summarize the HIGHLIGHTS (亮点) with emojis (✨):
-   - Big company experience (腾讯云、深言科技、美的集团 etc.)
-   - Awards and competitions
-   - Number of projects
-   - Education background
-
-3. Check COMPLETENESS (⚠️):
-   - Which sections are empty (个人总结、工作经历描述 etc.)
-   - What information is missing
-
-4. Ask if user wants DEEP ANALYSIS:
-   "🤔 需要我为您深入分析简历，找出需要优化的地方吗？"
-   Also mention: "回复'帮我分析'或'开始优化'，我们就开始！"
-
-**Output format for introduction:**
-
-```
-我已经阅读了您的简历，整体来看非常不错！
-
-✨ 主要亮点：
-• 有腾讯云、深言科技等大厂实习经历
-• 有数学建模和人工智能比赛奖项
-• 项目经历丰富，技术栈全面
-
-⚠️ 缺少内容：
-• 个人总结为空
-• 工作经历描述不完整
-
-━━━━━━━━━━━━━━━━━━━━━
-🤔 需要我为您深入分析简历，找出需要优化的地方吗？
-
-回复 "帮我分析" 或 "开始优化"，我们就开始！
-```
-
-**When user asks other questions:**
-- Use read_cv_context tool to get relevant information
-- Answer specifically with details from the resume
-- Provide actionable suggestions
-
-**Language:**
-Respond in Chinese (Simplified) for Chinese users.
-"""
-
-    next_step_prompt: str = """Please analyze the user's question and use the read_cv_context tool to get relevant resume information, then provide a helpful response."""
+    system_prompt: str = SYSTEM_PROMPT
+    next_step_prompt: str = NEXT_STEP_PROMPT
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             ReadCVContext(),
-            CreateChatCompletion(),
             Terminate(),
         )
     )
 
     special_tool_names: list[str] = Field(default_factory=lambda: [Terminate().name])
 
-    max_steps: int = 10
+    max_steps: int = 5
 
     # 当前加载的简历数据
     _resume_data: Optional[Dict] = None
@@ -151,7 +82,7 @@ Use the read_cv_context tool to get detailed information about specific sections
             resume_data: 简历数据（如果未加载过）
 
         Returns:
-            AI 回复
+            AI 回复（最后的 assistant 消息内容）
         """
         if resume_data:
             self.load_resume(resume_data)
@@ -162,6 +93,11 @@ Use the read_cv_context tool to get detailed information about specific sections
         self.update_memory("user", message)
 
         # 运行 Agent
-        result = await self.run()
+        await self.run()
 
-        return result
+        # 返回最后一条有内容的 assistant 消息
+        for msg in reversed(self.memory.messages):
+            if msg.role == "assistant" and msg.content and not msg.tool_calls:
+                return msg.content
+
+        return "抱歉，我无法生成回复。"
