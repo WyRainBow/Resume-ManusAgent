@@ -8,6 +8,7 @@ Manus 可以委托简历修改任务给这个工具。
 from typing import Optional, Any
 import json
 from app.tool.base import BaseTool, ToolResult
+from app.tool.resume_data_store import ResumeDataStore
 from app.llm import LLM
 
 
@@ -65,30 +66,28 @@ Examples:
         "required": ["path", "action"]
     }
 
-    # 全局简历数据引用（通过 server.py 设置）
-    _global_resume_data_ref: Optional[dict] = None
-
     class Config:
         arbitrary_types_allowed = True
 
     @classmethod
     def set_resume_data(cls, resume_data: dict):
-        """设置全局简历数据引用 - 这会被 server.py 调用"""
-        cls._global_resume_data_ref = resume_data
+        """设置全局简历数据引用（兼容旧接口）- 这会被 server.py 调用"""
+        ResumeDataStore.set_data(resume_data)
 
     @classmethod
     def get_resume_data(cls) -> Optional[dict]:
         """获取当前简历数据"""
-        return cls._global_resume_data_ref
+        return ResumeDataStore.get_data()
 
     async def execute(self, path: str, action: str, value: Any = None) -> ToolResult:
         """执行简历编辑
 
         内部创建 CVEditor Agent 并运行它来处理编辑任务
         """
-        if not self._global_resume_data_ref:
+        resume_data = ResumeDataStore.get_data()
+        if not resume_data:
             return ToolResult(
-                output="No resume data loaded. Please use load_resume_data tool first."
+                output="No resume data loaded. Please use cv_reader_agent tool first to read resume data."
             )
 
         try:
@@ -99,7 +98,7 @@ Examples:
             cv_editor = CVEditor()
 
             # 加载简历数据（传入引用，所以修改会直接影响原始数据）
-            cv_editor.load_resume(self._global_resume_data_ref)
+            cv_editor.load_resume(resume_data)
 
             # 执行编辑操作
             result = await cv_editor.edit_resume(path, action, value)
@@ -153,7 +152,7 @@ Returns a hierarchical view of all resume fields."""
         resume_data = CVEditorAgentTool.get_resume_data()
         if not resume_data:
             return ToolResult(
-                output="No resume data loaded. Please use load_resume_data tool first."
+                output="No resume data loaded. Please use cv_reader_agent tool first to read resume data."
             )
 
         def format_structure(data: dict, prefix: str = "", max_depth: int = 3, current_depth: int = 0) -> list:
