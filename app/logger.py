@@ -1,5 +1,6 @@
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from loguru import logger as _logger
 
@@ -14,15 +15,25 @@ def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None
     global _print_level
     _print_level = print_level
 
+    # 使用日期格式的日志文件名：YYYYMMDD-backend.log
     current_date = datetime.now()
-    formatted_date = current_date.strftime("%Y%m%d%H%M%S")
-    log_name = (
-        f"{name}_{formatted_date}" if name else formatted_date
-    )  # name a log with prefix name
+    formatted_date = current_date.strftime("%Y%m%d")
+    log_name = f"{formatted_date}-backend.log"
+
+    # 确保 logs/backend 目录存在
+    log_dir = PROJECT_ROOT / "logs" / "backend"
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     _logger.remove()
     _logger.add(sys.stderr, level=print_level)
-    _logger.add(PROJECT_ROOT / f"logs/{log_name}.log", level=logfile_level)
+    _logger.add(
+        log_dir / log_name,
+        level=logfile_level,
+        rotation="00:00",  # 每天午夜分割日志
+        retention="30 days",  # 保留30天的日志
+        compression="zip",  # 压缩旧日志
+        encoding="utf-8"
+    )
     return _logger
 
 

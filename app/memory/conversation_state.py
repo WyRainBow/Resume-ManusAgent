@@ -1,16 +1,8 @@
 """
-LangChain Conversation Manager - 对话管理系统
+Conversation State Manager - Manages conversation state and intent recognition
 
-核心功能：
-1. 对话状态管理（状态机）
-2. 意图识别（基于 LLM，不使用关键词匹配）
-3. 上下文追踪（自动注入相关上下文）
-4. 动态提示词生成（根据状态生成提示词）
-
-设计原则：
-- 不改变 Manus 主架构
-- 作为增强层，提供智能对话管理
-- 使用 LLM 进行意图识别，不依赖关键词
+This module preserves the logic from the original conversation_manager.py,
+separated from the message history management.
 """
 
 from enum import Enum
@@ -24,34 +16,34 @@ from app.logger import logger
 
 class ConversationState(str, Enum):
     """对话状态"""
-    IDLE = "idle"                    # 空闲，等待用户输入
-    GREETING = "greeting"            # 问候
-    RESUME_LOADED = "resume_loaded"  # 简历已加载
-    ANALYZING = "analyzing"          # 正在分析
-    OPTIMIZING = "optimizing"        # 正在优化
-    WAITING_ANSWER = "waiting_answer"  # 等待用户回答问题
-    EDITING = "editing"              # 正在编辑
+    IDLE = "idle"
+    GREETING = "greeting"
+    RESUME_LOADED = "resume_loaded"
+    ANALYZING = "analyzing"
+    OPTIMIZING = "optimizing"
+    WAITING_ANSWER = "waiting_answer"
+    EDITING = "editing"
 
 
 class Intent(str, Enum):
     """用户意图"""
-    GREETING = "greeting"            # 问候
-    LOAD_RESUME = "load_resume"      # 加载简历
-    VIEW_RESUME = "view_resume"      # 查看简历
-    ANALYZE = "analyze"              # 分析简历
-    OPTIMIZE = "optimize"            # 优化简历（整体）
-    OPTIMIZE_SECTION = "optimize_section"  # 优化特定模块
-    ANSWER_QUESTION = "answer_question"    # 回答问题
-    CONFIRM = "confirm"              # 确认（可以、好的）
-    CANCEL = "cancel"                # 取消
-    UNKNOWN = "unknown"              # 未知意图
+    GREETING = "greeting"
+    LOAD_RESUME = "load_resume"
+    VIEW_RESUME = "view_resume"
+    ANALYZE = "analyze"
+    OPTIMIZE = "optimize"
+    OPTIMIZE_SECTION = "optimize_section"
+    ANSWER_QUESTION = "answer_question"
+    CONFIRM = "confirm"
+    CANCEL = "cancel"
+    UNKNOWN = "unknown"
 
 
 class OptimizationContext(BaseModel):
     """优化上下文 - 追踪优化流程状态"""
-    section: str = ""                # 当前优化的模块（工作经历、个人总结等）
-    current_question: int = 0        # 当前问题编号 (1, 2, 3)
-    answers: Dict[str, str] = Field(default_factory=dict)  # 收集的答案
+    section: str = ""
+    current_question: int = 0
+    answers: Dict[str, str] = Field(default_factory=dict)
     started_at: Optional[datetime] = None
 
 
@@ -62,31 +54,28 @@ class ConversationContext(BaseModel):
     last_tool_used: str = ""
     last_ai_response: str = ""
     optimization: OptimizationContext = Field(default_factory=OptimizationContext)
-    history_summary: str = ""  # 对话历史摘要
+    history_summary: str = ""
     turn_count: int = 0
 
 
-class ConversationManager:
+class ConversationStateManager:
     """
-    对话管理器 - 基于 LLM 的智能对话管理
+    对话状态管理器
 
-    使用方式：
-    1. 在 Manus 中初始化，传入 LLM 客户端
-    2. 每次用户输入时调用 process_input() 获取意图和上下文
-    3. 根据返回的意图和上下文选择工具
-
-    注意：完全使用 LLM 进行意图识别，不使用关键词匹配
+    与原 ConversationManager 的区别：
+    - 不管理消息历史（由 ChatHistoryManager 负责）
+    - 只负责状态机和意图识别
     """
 
     def __init__(self, llm=None):
         """
-        初始化对话管理器
+        初始化对话状态管理器
 
         Args:
             llm: LLM 客户端实例，用于意图识别
         """
         self.context = ConversationContext()
-        self.llm = llm  # LLM 客户端，用于意图识别
+        self.llm = llm
 
     async def classify_intent_with_llm(
         self,
@@ -107,9 +96,9 @@ class ConversationManager:
                 "intent": Intent,
                 "confidence": float,
                 "extracted_info": {
-                    "section": str,  # 如果是优化模块
-                    "question": str,  # 如果是回答问题
-                    "answer_type": str  # duties/results/technologies
+                    "section": str,
+                    "question": str,
+                    "answer_type": str
                 },
                 "reasoning": str
             }
@@ -126,7 +115,6 @@ class ConversationManager:
         # 构建对话历史摘要
         history_text = ""
         if conversation_history:
-            # 只取最近5条消息
             recent_messages = conversation_history[-5:]
             history_parts = []
             for msg in recent_messages:
@@ -163,15 +151,8 @@ class ConversationManager:
 
 ## 识别规则
 1. **回答识别**：如果最后一条AI消息包含"问题1"、"问题2"、"问题3"，且用户输入是回答（不是新问题），则识别为 answer_question
-   - 问题1的回答通常包含职责描述（"负责"、"主要工作"等）
-   - 问题2的回答通常包含量化数据（数字、百分比、"提升"、"增长"等）
-   - 问题3的回答通常包含技术名称（React、Python、TypeScript等）
-
 2. **模块优化识别**：如果用户说"优化XX"（XX是具体模块名），则识别为 optimize_section
-   - 常见模块：工作经历、个人总结、技能、项目经历、教育背景
-
 3. **确认识别**：如果用户输入是简短确认词（1-3个字），且上下文中有待确认的内容，则识别为 confirm
-
 4. **上下文理解**：必须考虑对话历史，不要只看当前输入
 
 ## 输出格式（必须是有效的JSON）
@@ -189,16 +170,13 @@ class ConversationManager:
 请只返回JSON，不要其他内容。"""
 
         try:
-            # 调用 LLM 进行意图分类
             response = await self.llm.ask(
                 messages=[{"role": "user", "content": prompt}],
                 stream=False,
-                temperature=0.1  # 低温度，更确定
+                temperature=0.1
             )
 
-            # 解析 JSON 响应
             response = response.strip()
-            # 移除可能的 markdown 代码块标记
             if response.startswith("```json"):
                 response = response[7:]
             if response.startswith("```"):
@@ -209,7 +187,6 @@ class ConversationManager:
 
             result = json.loads(response)
 
-            # 转换为 Intent 枚举
             intent_str = result.get("intent", "unknown")
             try:
                 intent = Intent(intent_str)
@@ -225,7 +202,7 @@ class ConversationManager:
             }
 
         except json.JSONDecodeError as e:
-            logger.error(f"LLM 返回的 JSON 解析失败: {e}, 响应: {response[:200]}")
+            logger.error(f"LLM 返回的 JSON 解析失败: {e}")
             return {
                 "intent": Intent.UNKNOWN,
                 "confidence": 0.0,
@@ -247,12 +224,7 @@ class ConversationManager:
         conversation_history: List[Any] = None,
         last_ai_message: Optional[str] = None
     ) -> Tuple[Intent, Dict[str, Any]]:
-        """
-        使用 LLM 检测用户意图（不使用关键词匹配）
-
-        返回：(意图, 附加信息)
-        """
-        # 使用 LLM 进行意图分类
+        """使用 LLM 检测用户意图"""
         llm_result = await self.classify_intent_with_llm(
             user_input=user_input,
             conversation_history=conversation_history,
@@ -262,7 +234,7 @@ class ConversationManager:
         intent = llm_result["intent"]
         extracted_info = llm_result.get("extracted_info", {})
 
-        logger.info(f"🧠 LLM 意图识别: {intent.value}, 置信度: {llm_result.get('confidence', 0):.2f}, 理由: {llm_result.get('reasoning', '')}")
+        logger.info(f"🧠 LLM 意图识别: {intent.value}, 置信度: {llm_result.get('confidence', 0):.2f}")
 
         return intent, extracted_info
 
@@ -275,25 +247,22 @@ class ConversationManager:
         """
         处理用户输入，返回处理建议
 
-        返回：
-        {
-            "intent": Intent,
-            "tool": str,  # 建议使用的工具
-            "tool_args": dict,  # 工具参数
-            "context_prompt": str,  # 注入的上下文提示
-            "should_skip_llm": bool,  # 是否跳过 LLM 直接执行
-        }
+        Returns:
+            {
+                "intent": Intent,
+                "tool": str,
+                "tool_args": dict,
+                "context_prompt": str,
+                "should_skip_llm": bool,
+            }
         """
         self.context.turn_count += 1
 
-        # 使用 LLM 进行意图识别（异步）
         intent, info = await self.detect_intent(
             user_input=user_input,
             conversation_history=conversation_history,
             last_ai_message=last_ai_message
         )
-
-        logger.info(f"🧠 ConversationManager: 检测到意图 {intent.value}, 信息: {info}")
 
         result = {
             "intent": intent,
@@ -303,23 +272,18 @@ class ConversationManager:
             "should_skip_llm": False,
         }
 
-        # 根据意图决定处理方式
         if intent == Intent.GREETING:
-            result["tool"] = None  # 让 LLM 处理问候
+            result["tool"] = None
             self.context.state = ConversationState.GREETING
-
         elif intent == Intent.VIEW_RESUME:
             result["tool"] = "cv_reader_agent"
-
         elif intent == Intent.ANALYZE:
             result["tool"] = "cv_analyzer_agent"
             self.context.state = ConversationState.ANALYZING
-
         elif intent == Intent.OPTIMIZE:
             result["tool"] = "cv_optimizer_agent"
             result["tool_args"] = {"action": "start_optimization"}
             self.context.state = ConversationState.OPTIMIZING
-
         elif intent == Intent.OPTIMIZE_SECTION:
             section = info.get("section", "工作经历")
             result["tool"] = "cv_optimizer_agent"
@@ -331,34 +295,26 @@ class ConversationManager:
             self.context.optimization.section = section
             self.context.optimization.current_question = 1
             self.context.optimization.started_at = datetime.now()
-
         elif intent == Intent.ANSWER_QUESTION:
             result["tool"] = "cv_optimizer_agent"
             question = info.get("question", "问题1")
-            # 从 extracted_info 中获取答案内容
-            answer_content = info.get("content", user_input)  # 如果没有，使用原始输入
+            answer_content = info.get("content", user_input)
             result["tool_args"] = {
                 "action": "optimize_section",
                 "section": self.context.optimization.section or "工作经历",
                 "answer": answer_content,
                 "question": question
             }
-            # 更新问题编号
             q_num = int(question.replace("问题", ""))
             self.context.optimization.current_question = q_num + 1
             self.context.optimization.answers[question] = answer_content
             self.context.state = ConversationState.WAITING_ANSWER
-
         elif intent == Intent.CONFIRM:
-            # 根据上下文决定确认什么
             result = self._handle_confirm()
-
         elif intent == Intent.CANCEL:
             self._reset_optimization()
             result["context_prompt"] = "用户取消了当前操作。"
-
         else:
-            # 未知意图，生成上下文提示让 LLM 处理
             result["context_prompt"] = self._generate_context_prompt()
 
         return result
@@ -373,7 +329,6 @@ class ConversationManager:
             "should_skip_llm": False,
         }
 
-        # 根据上下文决定确认什么
         last_tool = self.context.last_tool_used
 
         if "analyzer" in last_tool or "分析" in self.context.last_ai_response:
@@ -390,42 +345,31 @@ class ConversationManager:
         return result
 
     def _generate_context_prompt(self) -> str:
-        """生成上下文提示，注入到系统提示中"""
+        """生成上下文提示"""
         parts = []
 
-        # 当前状态
         parts.append(f"当前状态: {self.context.state.value}")
 
-        # 简历状态
         if self.context.resume_loaded:
             parts.append("简历已加载")
         else:
             parts.append("简历未加载")
 
-        # 优化进度
         if self.context.state in [ConversationState.OPTIMIZING, ConversationState.WAITING_ANSWER]:
             opt = self.context.optimization
             if opt.section:
                 parts.append(f"正在优化: {opt.section}")
                 parts.append(f"当前问题: 问题{opt.current_question}")
-                if opt.answers:
-                    parts.append(f"已收集答案: {list(opt.answers.keys())}")
-
-        # 历史摘要
-        if self.context.history_summary:
-            parts.append(f"对话摘要: {self.context.history_summary}")
 
         return "\n".join(parts)
 
     def update_after_tool(self, tool_name: str, result: str):
         """工具执行后更新状态"""
         self.context.last_tool_used = tool_name
-        self.context.last_ai_response = result[:500]  # 保存前500字符
+        self.context.last_ai_response = result[:500]
 
-        # 检测是否在等待回答
         if "我最建议先回答问题" in result or "请回答" in result:
             self.context.state = ConversationState.WAITING_ANSWER
-            # 尝试提取当前问题编号
             import re
             match = re.search(r'问题[一二三123]', result)
             if match:
@@ -449,7 +393,7 @@ class ConversationManager:
         return self._generate_context_prompt()
 
     def should_use_tool_directly(self, intent: Intent) -> bool:
-        """判断是否应该直接使用工具，跳过 LLM 思考"""
+        """判断是否应该直接使用工具"""
         direct_intents = [
             Intent.VIEW_RESUME,
             Intent.ANALYZE,
@@ -458,4 +402,3 @@ class ConversationManager:
             Intent.ANSWER_QUESTION,
         ]
         return intent in direct_intents
-

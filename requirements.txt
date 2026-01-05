@@ -45,3 +45,8 @@ setuptools~=75.8.0
 structlog
 markdownify
 pyjwt>=2.8.0,<2.9.0
+
+# LangChain for conversation management (compatible versions)
+langchain>=0.3.0,<0.4.0
+langchain-openai==0.3.1
+langchain-core>=0.3.27,<0.4.0

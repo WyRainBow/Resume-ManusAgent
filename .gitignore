@@ -33,6 +33,7 @@ env/
 
 # Logs
 *.log
+logs/
 
 # Environment
 .env
@@ -57,3 +58,5 @@ htmlcov/
 *.tmp
 *.bak
 .cache/
+
+# Docs (keep docs/ folder)

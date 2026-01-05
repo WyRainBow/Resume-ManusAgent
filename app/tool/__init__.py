@@ -5,7 +5,7 @@ from app.tool.create_chat_completion import CreateChatCompletion
 from app.tool.cv_analyzer_agent_tool import CVAnalyzerAgentTool
 from app.tool.cv_editor_agent_tool import CVEditorAgentTool, GetResumeStructure
 from app.tool.cv_optimizer_agent_tool import CVOptimizerAgentTool
-from app.tool.cv_reader_agent_tool import CVReaderAgentTool, LoadResumeData
+from app.tool.cv_reader_agent_tool import CVReaderAgentTool
 from app.tool.cv_reader_tool import ReadCVContext
 from app.tool.planning import PlanningTool
 from app.tool.str_replace_editor import StrReplaceEditor
@@ -36,7 +36,6 @@ __all__ = [
     "CVOptimizerAgentTool",
     "CVEditorAgentTool",
     "GetResumeStructure",
-    "LoadResumeData",
 ]
 
 if Crawl4aiTool:

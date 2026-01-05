@@ -12,18 +12,21 @@ from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
 from app.tool.python_execute import PythonExecute
 from app.tool.str_replace_editor import StrReplaceEditor
-from app.memory.conversation_manager import ConversationManager, Intent, ConversationState
-from app.memory.langchain_memory import LangChainMemoryAdapter
+from app.memory import (
+    ChatHistoryManager,
+    ConversationStateManager,
+    ConversationState,
+    Intent,
+)
 from app.schema import Message, Role
 
 
 class Manus(ToolCallAgent):
     """A versatile general-purpose agent with support for both local and MCP tools.
 
-    集成 LangChain ConversationManager 提供智能对话管理：
-    - 自动意图识别
-    - 上下文追踪
-    - 状态管理
+    集成 LangChain 风格的 Memory 系统提供智能对话管理：
+    - ChatHistoryManager: 管理对话历史
+    - ConversationStateManager: 意图识别和状态管理
     """
 
     name: str = "Manus"
@@ -64,29 +67,28 @@ class Manus(ToolCallAgent):
     )  # server_id -> url/command
     _initialized: bool = False
 
-    # ConversationManager - 使用 PrivateAttr 避免 pydantic 验证
-    _conversation_manager: ConversationManager = PrivateAttr(default=None)
-    _langchain_memory: LangChainMemoryAdapter = PrivateAttr(default=None)
+    # Memory components - 使用 PrivateAttr 避免 pydantic 验证
+    _conversation_state: ConversationStateManager = PrivateAttr(default=None)
+    _chat_history: ChatHistoryManager = PrivateAttr(default=None)
     _last_intent: Intent = PrivateAttr(default=None)
     _last_intent_info: Dict[str, Any] = PrivateAttr(default_factory=dict)
-    _should_wait_user: bool = PrivateAttr(default=False)  # 是否应该等待用户输入
-    _current_resume_path: Optional[str] = PrivateAttr(default=None)  # 当前简历文件路径
+    _should_wait_user: bool = PrivateAttr(default=False)
+    _current_resume_path: Optional[str] = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def initialize_helper(self) -> "Manus":
         """Initialize basic components synchronously."""
         self.browser_context_helper = BrowserContextHelper(self)
-        # 初始化对话管理器（LLM 会在 base.py 的 initialize_agent 中初始化）
-        # 注意：此时 self.llm 可能还没初始化，所以先设为 None，后续会更新
-        self._conversation_manager = ConversationManager(llm=None)
-        # 初始化 LangChain Memory
-        self._langchain_memory = LangChainMemoryAdapter(k=10, return_messages=True)
+        # 初始化对话状态管理器（LLM 会在 base.py 的 initialize_agent 中初始化）
+        self._conversation_state = ConversationStateManager(llm=None)
+        # 初始化聊天历史管理器
+        self._chat_history = ChatHistoryManager(k=10)
         return self
 
-    def _ensure_conversation_manager_llm(self):
-        """确保 ConversationManager 有 LLM 实例"""
-        if self._conversation_manager and not self._conversation_manager.llm and self.llm:
-            self._conversation_manager.llm = self.llm
+    def _ensure_conversation_state_llm(self):
+        """确保 ConversationStateManager 有 LLM 实例"""
+        if self._conversation_state and not self._conversation_state.llm and self.llm:
+            self._conversation_state.llm = self.llm
 
     @classmethod
     async def create(cls, **kwargs) -> "Manus":
@@ -203,7 +205,7 @@ class Manus(ToolCallAgent):
         """
         # 生成简单的上下文描述
         context_parts = []
-        if self._conversation_manager.context.resume_loaded:
+        if self._conversation_state.context.resume_loaded:
             context_parts.append("✅ 简历已加载")
         else:
             context_parts.append("⚠️ 简历未加载，建议先加载简历")
@@ -214,8 +216,8 @@ class Manus(ToolCallAgent):
             context_parts.append("💡 当用户说'读取我的简历'或'看看我的简历'时，应该读取这个文件")
 
         # 如果有正在优化的模块，简单提示
-        if self._conversation_manager.context.optimization.section:
-            opt = self._conversation_manager.context.optimization
+        if self._conversation_state.context.optimization.section:
+            opt = self._conversation_state.context.optimization
             context_parts.append(f"正在优化: {opt.section}")
             if opt.current_question > 0:
                 context_parts.append(f"当前问题: 问题{opt.current_question}")
@@ -278,7 +280,7 @@ class Manus(ToolCallAgent):
 
         else:
             hints.append("无法确定用户意图，请根据对话上下文理解用户需求。")
-            context_state = self._conversation_manager.context.state
+            context_state = self._conversation_state.context.state
             hints.append(f"当前状态: {context_state.value}")
 
         return "\n".join(hints)
@@ -289,8 +291,8 @@ class Manus(ToolCallAgent):
             await self.initialize_mcp_servers()
             self._initialized = True
 
-        # 确保 ConversationManager 有 LLM 实例
-        self._ensure_conversation_manager_llm()
+        # 确保 ConversationStateManager 有 LLM 实例
+        self._ensure_conversation_state_llm()
 
         # 获取最后的用户输入
         user_input = self._get_last_user_input()
@@ -320,35 +322,33 @@ class Manus(ToolCallAgent):
         """Execute tool calls and update conversation state."""
         result = await super().act()
 
-        # 更新对话管理器状态
+        # 更新对话状态管理器
         if self.tool_calls:
             for tool_call in self.tool_calls:
                 tool_name = tool_call.function.name
-                self._conversation_manager.update_after_tool(tool_name, result)
+                self._conversation_state.update_after_tool(tool_name, result)
 
                 # 特殊处理：加载简历后更新状态
                 if "load_resume" in tool_name.lower() or "cv_reader" in tool_name.lower():
                     if "成功" in result or "加载" in result:
-                        self._conversation_manager.update_resume_loaded(True)
+                        self._conversation_state.update_resume_loaded(True)
 
-        # 同步消息到 LangChain Memory
-        if self._langchain_memory:
+        # 同步消息到 ChatHistory
+        if self._chat_history:
             # 添加最近的 assistant 消息
             for msg in reversed(self.memory.messages[-5:]):
                 if msg.role == Role.ASSISTANT and msg.content:
                     # 检查是否已经添加过（避免重复）
-                    langchain_messages = self._langchain_memory.get_messages()
-                    if not langchain_messages or langchain_messages[-1].content != msg.content:
-                        self._langchain_memory.add_message(msg)
+                    history_messages = self._chat_history.get_messages()
+                    if not history_messages or history_messages[-1].content != msg.content:
+                        self._chat_history.add_message(msg)
                     break
 
         # 检查是否应该等待用户输入
-        # 优先检查工具返回的结果（因为工具可能返回问题）
-        if self._langchain_memory:
-            # 检查工具返回的结果（result 是格式化后的，包含 "Observed output of cmd..."）
+        if self._chat_history:
+            # 检查工具返回的结果
             tool_result = result if result else None
 
-            # 如果工具返回包含问题关键词，直接标记为需要等待
             if tool_result:
                 wait_keywords = [
                     "问题1", "问题2", "问题3", "问题一", "问题二", "问题三",
@@ -356,22 +356,20 @@ class Manus(ToolCallAgent):
                 ]
                 has_wait_keyword = any(kw in tool_result for kw in wait_keywords)
 
-                # 检查是否是真正的等待提示（不是错误信息，长度合理）
                 if has_wait_keyword and 50 < len(tool_result) < 2000:
-                    # 确保不是错误信息
                     if "error" not in tool_result.lower() and "失败" not in tool_result:
                         self._should_wait_user = True
-                        logger.info(f"⏸️ Manus: 工具返回包含问题，需要等待用户输入 - {tool_result[:100]}...")
+                        logger.info(f"⏸️ Manus: 工具返回包含问题，需要等待用户输入")
                         return result
 
-            # 否则检查最后的 AI 消息
+            # 检查最后的 AI 消息
             last_ai_msg = None
             for msg in reversed(self.memory.messages[-3:]):
                 if msg.role == Role.ASSISTANT and msg.content:
                     last_ai_msg = msg.content
                     break
 
-            self._should_wait_user = self._langchain_memory.should_wait_for_user(last_ai_msg)
+            self._should_wait_user = self._chat_history.should_wait_for_user(last_ai_msg)
             if self._should_wait_user:
                 logger.info("⏸️ Manus: 检测到需要等待用户输入，将暂停执行")
 

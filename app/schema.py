@@ -158,7 +158,7 @@ class Message(BaseModel):
 
 class Memory(BaseModel):
     messages: List[Message] = Field(default_factory=list)
-    max_messages: int = Field(default=100)
+    max_messages: int = Field(default=25)  # 从100调整为25，支持20-30轮对话，自动管理Token预算
 
     def add_message(self, message: Message) -> None:
         """Add a message to memory"""
@@ -177,6 +177,44 @@ class Memory(BaseModel):
     def clear(self) -> None:
         """Clear all messages"""
         self.messages.clear()
+
+    def cleanup_incomplete_sequences(self) -> None:
+        """清理不完整的消息序列，确保 tool 消息前有对应的 tool_calls"""
+        if not self.messages:
+            return
+
+        cleaned = []
+        i = 0
+        while i < len(self.messages):
+            msg = self.messages[i]
+
+            # 如果是 tool 消息，检查前一条消息是否有对应的 tool_calls
+            if msg.role == "tool" and msg.tool_call_id:
+                # 检查前一条 assistant 消息是否有对应的 tool_call
+                if i > 0 and self.messages[i-1].role == "assistant":
+                    prev_msg = self.messages[i-1]
+                    if prev_msg.tool_calls:
+                        # 检查是否有匹配的 tool_call_id
+                        has_match = any(
+                            tc.id == msg.tool_call_id
+                            for tc in prev_msg.tool_calls
+                        )
+                        if has_match:
+                            cleaned.append(msg)
+                        # 如果没有匹配，跳过这个 tool 消息（不完整）
+                    else:
+                        # 前一条消息没有 tool_calls，跳过这个 tool 消息
+                        pass
+                else:
+                    # 前一条消息不是 assistant，跳过这个 tool 消息
+                    pass
+            else:
+                # 不是 tool 消息，直接添加
+                cleaned.append(msg)
+
+            i += 1
+
+        self.messages = cleaned
 
     def get_recent_messages(self, n: int) -> List[Message]:
         """Get n most recent messages"""

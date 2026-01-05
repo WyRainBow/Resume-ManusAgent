@@ -1,93 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Loader2, Terminal, FileText, ChevronDown, ChevronUp, X, Eye, Sparkles, Brain, Zap, CheckCircle2, AlertCircle, Wrench, Search, Edit, BarChart, MessageSquare } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import HTMLTemplateRenderer from './components/HTMLTemplateRenderer';
-
-// 示例简历数据
-const SAMPLE_RESUME = {
-  id: 'sample-001',
-  title: '前端工程师简历',
-  basic: {
-    name: '张三',
-    title: '高级前端工程师',
-    email: 'zhangsan@example.com',
-    phone: '13800138000',
-    location: '北京',
-    employementStatus: '在职，看机会'
-  },
-  education: [
-    {
-      id: 'edu-1',
-      school: '北京大学',
-      degree: '学士',
-      major: '计算机科学与技术',
-      startDate: '2018-09',
-      endDate: '2022-06',
-      gpa: '3.8/4.0',
-      description: '<p>主修课程：数据结构、算法、计算机网络、操作系统</p>'
-    }
-  ],
-  experience: [
-    {
-      id: 'exp-1',
-      company: '阿里巴巴',
-      position: '前端工程师',
-      date: '2022-07 - 至今',
-      details: '<p>负责淘宝前端页面开发，使用 React 和 TypeScript</p><p>优化页面性能，提升用户体验</p>'
-    }
-  ],
-  projects: [
-    {
-      id: 'proj-1',
-      name: '开源组件库',
-      role: '核心开发者',
-      date: '2023-01 - 2023-12',
-      description: '<p>开发了一套 React 组件库，已在 GitHub 获得 1000+ stars</p>',
-      link: 'https://github.com/example/ui-lib'
-    }
-  ],
-  openSource: [
-    {
-      id: 'os-1',
-      name: 'Vue.js',
-      role: '贡献者',
-      description: '<p>修复了多个 bug，参与了新功能开发</p>',
-      repo: 'https://github.com/vuejs/core'
-    }
-  ],
-  awards: [
-    {
-      id: 'award-1',
-      title: '优秀员工',
-      issuer: '阿里巴巴',
-      date: '2023-12'
-    }
-  ],
-  skillContent: '<p><strong>前端技能：</strong>React, Vue, TypeScript, HTML/CSS</p><p><strong>后端技能：</strong>Node.js, Python</p>',
-  customData: {},
-  menuSections: [
-    { id: 'basic', title: '基本信息', icon: '', enabled: true, order: 0 },
-    { id: 'skills', title: '专业技能', icon: '', enabled: true, order: 1 },
-    { id: 'experience', title: '工作经历', icon: '', enabled: true, order: 2 },
-    { id: 'projects', title: '项目经历', icon: '', enabled: true, order: 3 },
-    { id: 'openSource', title: '开源经历', icon: '', enabled: true, order: 4 },
-    { id: 'awards', title: '荣誉奖项', icon: '', enabled: true, order: 5 },
-    { id: 'education', title: '教育经历', icon: '', enabled: true, order: 6 },
-  ],
-  draggingProjectId: null,
-  globalSettings: {},
-  activeSection: 'basic'
-};
+import { Send, Bot, Brain, Zap, AlertCircle, History, X, Clock, RotateCcw } from 'lucide-react';
+import MarkdownRenderer from './components/MarkdownRenderer';
+import logger from './utils/logger';
 
 function App() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [status, setStatus] = useState('idle'); // idle, connecting, processing
   const [ws, setWs] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [checkpointHistory, setCheckpointHistory] = useState([]);
   const messagesEndRef = useRef(null);
-  const [showResumePanel, setShowResumePanel] = useState(false);
-  const [resumeData, setResumeData] = useState(SAMPLE_RESUME);
-  const [showThinkingProcess, setShowThinkingProcess] = useState(false);
 
   useEffect(() => {
     // 自动连接 WebSocket
@@ -142,78 +66,78 @@ function App() {
     setWs(socket);
   };
 
+  // 获取历史对话
+  const fetchHistory = async () => {
+    try {
+      // 获取对话历史
+      const chatRes = await fetch('/api/history/chat');
+      if (chatRes.ok) {
+        const chatData = await chatRes.json();
+        setChatHistory(chatData.messages || []);
+      }
+
+      // 获取 Checkpoint 历史
+      const checkpointRes = await fetch('/api/history/checkpoints');
+      if (checkpointRes.ok) {
+        const checkpointData = await checkpointRes.json();
+        setCheckpointHistory(checkpointData.checkpoints || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch history:', error);
+    }
+  };
+
   const handleMessage = (data) => {
+    // 记录所有 WebSocket 消息到日志
+    logger.wsMessage(data.type, data.content || data);
+
     setMessages(prev => {
       const newMessages = [...prev];
-      const lastMsg = newMessages[newMessages.length - 1];
 
-      // 如果是步骤更新
+      // 只显示 Manus 的思考过程、工具调用和最终报告
+      // 不显示工具返回的原始数据、步骤信息、上下文信息
+
       if (data.type === 'step') {
-        // 显示步骤信息
-        return [...newMessages, {
-          role: 'system',
-          type: 'step',
-          content: data.content,
-          step: data.step
-        }];
+        setStatus('processing');
+        return newMessages; // 不显示步骤信息
       }
 
-      // 如果是思考过程 (thought)
+      if (data.type === 'context') {
+        return newMessages; // 不显示上下文信息
+      }
+
       if (data.type === 'thought') {
-        if (lastMsg && lastMsg.role === 'agent' && lastMsg.type === 'thought') {
-          // 追加到上一条思考消息
-          lastMsg.content += data.content;
-          return [...newMessages];
-        } else {
+        // 显示 Manus 的思考过程
           return [...newMessages, { role: 'agent', type: 'thought', content: data.content }];
-        }
       }
 
-      // 如果是工具调用 - 检测是否是 CV 相关工具
       if (data.type === 'tool_call') {
-        // 如果是加载简历或分析简历的工具，自动显示简历面板
-        if (data.tool === 'load_resume_data' || data.tool === 'cv_reader_agent' || data.tool === 'cv_editor_agent') {
-          setShowResumePanel(true);
+        // 显示工具调用和参数
+        let argsDisplay = '';
+        if (data.args) {
+          try {
+            const argsObj = typeof data.args === 'string' ? JSON.parse(data.args) : data.args;
+            argsDisplay = `\n参数: ${JSON.stringify(argsObj, null, 2)}`;
+          } catch (e) {
+            argsDisplay = `\n参数: ${data.args}`;
+          }
         }
-        return [...newMessages, {
-          role: 'agent',
-          type: 'tool_call',
-          tool: data.tool,
-          args: data.args
-        }];
+        const toolInfo = `🔧 调用工具: ${data.tool}${argsDisplay}`;
+        return [...newMessages, { role: 'agent', type: 'tool_call', content: toolInfo, tool: data.tool }];
       }
 
-      // 如果是工具结果
       if (data.type === 'tool_result') {
-        const toolResultMsg = {
-          role: 'system',
-          type: 'tool_result',
-          tool: data.tool,
-          content: data.result
-        };
-
-        // 如果是 CV 相关工具执行成功，刷新简历数据
-        const isCVTool = data.tool === 'cv_editor_agent' || data.tool === 'load_resume_data';
-        if (isCVTool && data.result && (
-          data.result.includes('✅') ||
-          data.result.includes('Successfully loaded') ||
-          data.result.includes('Candidate:')
-        )) {
-          // 给后端一点时间处理数据
-          setTimeout(() => refreshResumeData(), 300);
-        }
-
-        return [...newMessages, toolResultMsg];
+        // 不显示工具返回的原始数据，只记录到日志
+        logger.debug(`工具结果: ${data.tool} (已隐藏详细内容)`);
+        return newMessages; // 不显示工具结果
       }
 
-      // 如果是最终答案
       if (data.type === 'answer') {
         setStatus('idle');
-        setShowThinkingProcess(false); // 思考完成，自动收起
+        // 显示最终报告
         return [...newMessages, { role: 'agent', type: 'answer', content: data.content }];
       }
 
-      // 错误信息
       if (data.type === 'error') {
         setStatus('idle');
         return [...newMessages, { role: 'system', type: 'error', content: data.content }];
@@ -227,6 +151,9 @@ function App() {
     e.preventDefault();
     if (!input.trim() || status === 'processing') return;
 
+    // 记录用户操作
+    logger.userAction('提交消息', { input: input.trim() });
+
     // 检测是否是问候消息
     const isGreeting = /^(你好|您好|hi|hello|嗨)$/i.test(input.trim());
 
@@ -238,24 +165,24 @@ function App() {
       setMessages(prev => [...prev, {
         role: 'agent',
         type: 'greeting',
-        content: `# 👋 你好！我是 OpenManus
+        content: `# 👋 你好：我是 OpenManus
 
 很高兴为您服务！我可以帮您：
 
 ## ✨ 我的能力
 
 - 📊 **分析简历** - 深入分析简历质量和问题
-- ✏️ **优化简历** - 改进内容和格式，提升竞争力
+- ✏️ **优化简历** - 改进内容和格式、提升竞争力
 - 💡 **求职建议** - 提供专业的求职指导
 - 🎨 **格式美化** - 优化简历结构和排版
 
 ## 🚀 如何开始
 
 1. **加载简历** - 请先上传或输入您的简历数据
-2. **分析问题** - 告诉我 '分析一下我的简历'
+2. **分析问题** - 告诉我 “分析一下我的简历“”
 3. **开始优化** - 跟随我的建议逐步优化
 
-请告诉我您的需求，让我们开始吧！ 😊`
+请告诉我您的需求：让我们开始吧！ 😊`
       }]);
       setInput('');
       return;
@@ -271,41 +198,74 @@ function App() {
     }
   };
 
-  const loadSampleResume = () => {
-    setResumeData(SAMPLE_RESUME);
-    setShowResumePanel(true);
-    // 自动发送加载简历的消息
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ prompt: '请帮我加载示例简历' }));
-      setStatus('processing');
-    }
-  };
-
-  const refreshResumeData = async () => {
-    // 从后端获取最新的简历数据
-    try {
-      const response = await fetch('/api/resume');
-      const data = await response.json();
-      if (data.data && Object.keys(data.data).length > 0) {
-        setResumeData(data.data);
-      }
-    } catch (error) {
-      console.error('Failed to refresh resume data:', error);
-    }
-  };
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
+      {/* 历史侧边栏 */}
+      {showHistory && (
+        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+              <Clock size={18} />
+              历史记录
+            </h2>
+            <button
+              onClick={() => setShowHistory(false)}
+              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={18} className="text-gray-500" />
+            </button>
+          </div>
+
+          {/* Checkpoint 历史 */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">简历版本历史</h3>
+              {checkpointHistory.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">暂无版本记录</p>
+              ) : (
+                <div className="space-y-2">
+                  {checkpointHistory.map((cp) => (
+                    <div key={cp.version} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-indigo-600">版本 {cp.version}</span>
+                        <span className="text-xs text-gray-400">{new Date(cp.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <div className="text-xs text-gray-600">{cp.action}</div>
+                      <div className="text-xs text-gray-400 mt-1">Agent: {cp.agent}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 对话历史 */}
+            <div className="p-4 border-t border-gray-200">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">对话历史</h3>
+              {chatHistory.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">暂无对话记录</p>
+              ) : (
+                <div className="space-y-2">
+                  {chatHistory.slice(-10).map((msg, idx) => (
+                    <div key={idx} className={`text-sm p-2 rounded ${msg.role === 'user' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-50 text-gray-600'}`}>
+                      <div className="font-medium text-xs mb-1">{msg.role === 'user' ? '👤 用户' : '🤖 AI'}</div>
+                      <div className="truncate">{msg.content}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 主聊天区域 */}
-      <div className={`flex flex-col h-full bg-white shadow-xl overflow-hidden transition-all duration-300 ${
-        showResumePanel ? 'w-1/2' : 'w-full max-w-5xl mx-auto'
-      }`}>
+      <div className="flex flex-col h-full bg-white shadow-xl overflow-hidden w-full max-w-5xl mx-auto">
 
         {/* Header with Navigation */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all duration-300 ${
-              status === 'processing' ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-200' : 'bg-indigo-600'
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all duration-300 ${status === 'processing' ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-200' : 'bg-indigo-600'
             }`}>
               {status === 'processing' ? (
                 <Brain size={20} className="animate-pulse" />
@@ -316,8 +276,7 @@ function App() {
             <div>
               <h1 className="text-xl font-bold text-gray-800">AI 简历助手</h1>
               <div className="flex items-center gap-2 text-xs">
-                <span className={`w-2 h-2 rounded-full ${
-                  status === 'disconnected' ? 'bg-red-500' :
+                <span className={`w-2 h-2 rounded-full ${status === 'disconnected' ? 'bg-red-500' :
                   status === 'processing' ? 'bg-violet-500 animate-pulse' : 'bg-green-500'
                 }`}></span>
                 <span className="text-gray-500">
@@ -326,26 +285,18 @@ function App() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={loadSampleResume}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 rounded-lg hover:from-emerald-100 hover:to-teal-100 transition-all text-sm border border-emerald-200"
-            >
-              <FileText size={16} />
-              <span>加载简历</span>
-            </button>
-            <button
-              onClick={() => setShowResumePanel(!showResumePanel)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
-                showResumePanel
-                  ? 'bg-indigo-100 text-indigo-700'
-                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-              }`}
-            >
-              <Eye size={16} />
-              <span>简历预览</span>
-            </button>
-          </div>
+
+          {/* 历史按钮 */}
+          <button
+            onClick={() => {
+              setShowHistory(!showHistory);
+              if (!showHistory) fetchHistory();
+            }}
+            className={`p-2 rounded-lg transition-colors ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-600'}`}
+            title="历史记录"
+          >
+            <History size={20} />
+          </button>
         </header>
 
         {/* Messages Area */}
@@ -385,50 +336,15 @@ function App() {
 
           {status === 'processing' && (
             <div className="flex gap-3 my-4">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                <Brain size={16} className="text-white animate-pulse" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Bot size={16} className="text-white animate-pulse" />
               </div>
-              <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 rounded-2xl rounded-tl-none shadow-sm">
-                <div
-                  className="p-4 cursor-pointer"
-                  onClick={() => setShowThinkingProcess(!showThinkingProcess)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1">
-                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></span>
-                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></span>
-                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></span>
-                      </div>
-                      <span className="text-violet-700 text-sm font-medium">AI 正在思考中</span>
-                      <Sparkles size={14} className="text-violet-500 animate-pulse" />
-                    </div>
-                    <div className={`transition-transform duration-200 ${showThinkingProcess ? 'rotate-180' : ''}`}>
-                      <ChevronDown size={16} className="text-violet-500 opacity-60" />
-                    </div>
-                  </div>
+              <div className="flex-1 flex items-center">
+                  <div className="flex gap-1">
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                 </div>
-                {showThinkingProcess && (
-                  <div className="px-4 pb-4 border-t border-violet-100 pt-3">
-                    {messages.filter(msg => msg.type === 'thought').length > 0 ? (
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {messages
-                          .filter(msg => msg.type === 'thought')
-                          .map((thought, idx) => (
-                            <div key={idx} className="text-xs text-violet-600 bg-white/50 p-2 rounded border border-violet-100">
-                              <ReactMarkdown className="prose prose-xs max-w-none text-violet-700">
-                                {thought.content}
-                              </ReactMarkdown>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-violet-500 italic">
-                        思考过程将在这里显示...
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -447,11 +363,26 @@ function App() {
                   e.preventDefault();
                   handleSubmit(e);
                 }
+                // 支持 Tab 键一键补全
+                if (e.key === 'Tab' && !input.trim()) {
+                  e.preventDefault();
+                  setInput('介绍我的简历');
+                }
               }}
-              placeholder="告诉我您的信息，帮您生成简历...（例如：我叫张三，是一名后端工程师）"
+              placeholder="介绍我的简历"
               className="w-full pl-4 pr-12 py-3 bg-gray-100 border-0 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none min-h-[56px] max-h-32"
               rows="1"
             />
+            {!input.trim() && (
+              <button
+                type="button"
+                onClick={() => setInput('介绍我的简历')}
+                className="absolute right-14 bottom-3 px-3 py-2 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors"
+                title="按 Tab 键或点击快速填充"
+              >
+                一键补全
+              </button>
+            )}
             <button
               type="submit"
               disabled={!input.trim() || status === 'processing'}
@@ -465,313 +396,100 @@ function App() {
           </div>
         </footer>
       </div>
-
-      {/* 简历预览面板 */}
-      {showResumePanel && (
-        <div className="w-1/2 border-l border-gray-200 bg-gray-100 flex flex-col overflow-hidden">
-          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
-            <div>
-              <h2 className="font-semibold text-gray-800">简历预览</h2>
-              <p className="text-xs text-gray-500">{resumeData.basic?.name || '未命名'} - {resumeData.basic?.title || '无职位'}</p>
-            </div>
-            <button
-              onClick={() => setShowResumePanel(false)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={18} className="text-gray-500" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
-            <div className="bg-white rounded-lg shadow-sm p-8 max-w-full mx-auto">
-              <HTMLTemplateRenderer resumeData={resumeData} />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// 消息组件
+// 消息组件 - 只显示 Manus 的思考、工具调用和最终报告
 const MessageItem = ({ message }) => {
   const isUser = message.role === 'user';
-  const [isExpanded, setIsExpanded] = useState(false);
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 text-white px-5 py-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md">
+      <div className="flex justify-end mb-4">
+        <div className="bg-indigo-600 text-white px-4 py-2 rounded-lg max-w-[80%]">
           {message.content}
         </div>
       </div>
     );
   }
 
-  // 步骤信息展示 - 更现代化的设计
-  if (message.type === 'step') {
-    return (
-      <div className="flex justify-center my-3">
-        <div className="inline-flex items-center gap-2 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200 rounded-full px-4 py-2 text-sm text-violet-700 shadow-sm">
-          <Sparkles size={14} className="animate-pulse" />
-          <span className="font-medium">步骤 {message.step}</span>
-          <span className="text-violet-400">·</span>
-          <span>{message.content}</span>
-        </div>
-      </div>
-    );
-  }
-
-  // 工具调用展示 - 增强版
-  if (message.type === 'tool_call') {
-    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
-
-    // 工具图标映射
-    const toolIconComponents = {
-      'load_resume_data': null, // 不显示图标
-      'cv_reader_agent': null, // 使用 emoji 🔍
-      'cv_editor_agent': Edit,
-      'get_resume_structure': BarChart,
-      'create_chat_completion': MessageSquare,
-    };
-
-    const toolEmojis = {
-      'cv_reader_agent': '🔍',
-    };
-
-    const toolColors = {
-      'load_resume_data': 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-700 bg-emerald-50/50',
-      'cv_reader_agent': 'from-blue-50 to-cyan-50 border-blue-200 text-blue-700 bg-blue-50/50',
-      'cv_editor_agent': 'from-violet-50 to-purple-50 border-violet-200 text-violet-700 bg-violet-50/50',
-      'get_resume_structure': 'from-amber-50 to-orange-50 border-amber-200 text-amber-700 bg-amber-50/50',
-    };
-
-    const colorClass = toolColors[message.tool] || 'from-gray-50 to-slate-50 border-gray-200 text-gray-700 bg-gray-50/50';
-    const IconComponent = toolIconComponents[message.tool];
-    const emoji = toolEmojis[message.tool];
-
-    return (
-      <div className="flex justify-start ml-10 my-2">
-        <div className={`bg-gradient-to-r ${colorClass} border rounded-xl p-3.5 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]`}>
-          <div
-            className="flex items-center justify-between cursor-pointer"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            <div className="flex items-center gap-3">
-              {emoji ? (
-                <div className={`p-1.5 rounded-lg ${message.tool === 'cv_reader_agent' ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                  <span className="text-base">{emoji}</span>
-                </div>
-              ) : IconComponent ? (
-                <div className={`p-1.5 rounded-lg ${message.tool === 'cv_editor_agent' ? 'bg-violet-100' :
-                                                        message.tool === 'get_resume_structure' ? 'bg-amber-100' :
-                                                        'bg-gray-100'}`}>
-                  <IconComponent size={16} className={message.tool === 'cv_editor_agent' ? 'text-violet-600' :
-                                                          message.tool === 'get_resume_structure' ? 'text-amber-600' :
-                                                          'text-gray-600'} />
-                </div>
-              ) : null}
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm">调用工具</span>
-                <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
-              </div>
-            </div>
-            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} className="opacity-60" />
-            </div>
-          </div>
-
-          {isExpanded && (
-            <div className="mt-3 bg-gray-900 text-gray-100 p-4 rounded-lg text-xs font-mono overflow-x-auto shadow-inner border border-gray-800">
-              <div className="flex items-center gap-2 text-gray-400 mb-2 pb-2 border-b border-gray-700">
-                <Terminal size={12} />
-                <span>参数</span>
-              </div>
-              <pre className="text-green-400">{typeof message.args === 'string'
-                ? (message.args.startsWith('{') || message.args.startsWith('[')
-                    ? JSON.stringify(JSON.parse(message.args), null, 2)
-                    : message.args)
-                : JSON.stringify(message.args, null, 2)}</pre>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // 工具结果展示 - 增强版
-  if (message.type === 'tool_result') {
-    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
-    const isSuccess = message.content && (message.content.includes('✅') || message.content.includes('Successfully') || message.content.includes('成功'));
-
-    // 如果是成功状态，显示简洁的成功通知卡片（参考文档中的深色成功通知样式）
-    if (isSuccess) {
-      const successText = message.content.includes('读取') || message.content.includes('load') ? '读取简历内容执行成功' :
-                         message.content.includes('分析') || message.content.includes('analyze') ? '分析简历执行成功' :
-                         message.content.includes('编辑') || message.content.includes('edit') ? '编辑简历执行成功' :
-                         '执行成功';
-
-      return (
-        <div className="flex flex-col justify-start ml-10 my-2">
-          <div className="bg-gray-800 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg max-w-[90%] cursor-pointer hover:bg-gray-700 transition-colors"
-               onClick={() => setIsExpanded(!isExpanded)}>
-            <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-              <CheckCircle2 size={14} className="text-white" />
-            </div>
-            <span className="text-white text-sm font-medium flex-1">{successText}</span>
-            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} className="text-gray-400" />
-            </div>
-          </div>
-          {isExpanded && (
-            <div className="mt-2 bg-white border border-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner max-w-[90%]">
-              <pre className="text-gray-600 whitespace-pre-wrap">{message.content}</pre>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // 工具图标映射
-    const toolIconComponents = {
-      'load_resume_data': null, // 不显示图标
-      'cv_reader_agent': null, // 使用 emoji 🔍
-      'cv_editor_agent': Edit,
-      'get_resume_structure': BarChart,
-    };
-
-    const toolEmojis = {
-      'cv_reader_agent': '🔍',
-    };
-
-    const IconComponent = toolIconComponents[message.tool];
-    const emoji = toolEmojis[message.tool];
-
-    return (
-      <div className="flex justify-start ml-10 my-2">
-        <div className={`${isSuccess ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'} border rounded-xl p-3.5 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]`}>
-          <div
-            className="flex items-center justify-between cursor-pointer"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            <div className="flex items-center gap-3">
-              {isSuccess ? (
-                <div className="p-1.5 rounded-lg bg-green-100">
-                  <CheckCircle2 size={16} className="text-green-600" />
-                </div>
-              ) : emoji ? (
-                <div className="p-1.5 rounded-lg bg-blue-100">
-                  <span className="text-base">{emoji}</span>
-                </div>
-              ) : IconComponent ? (
-                <div className="p-1.5 rounded-lg bg-blue-100">
-                  <IconComponent size={16} className="text-blue-600" />
-                </div>
-              ) : null}
-              <div className="flex items-center gap-2">
-                <span className={`font-medium text-sm ${isSuccess ? 'text-green-700' : 'text-blue-700'}`}>
-                  {isSuccess ? '执行成功' : '执行结果'}
-                </span>
-                <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
-              </div>
-            </div>
-            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} className="opacity-60" />
-            </div>
-          </div>
-
-          {isExpanded && (
-            <div className={`mt-3 bg-white border ${isSuccess ? 'border-green-100' : 'border-blue-100'} p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner`}>
-              <pre className={isSuccess ? 'text-green-700' : 'text-gray-600 whitespace-pre-wrap'}>{message.content}</pre>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // 思考过程 - 全新设计，参考 Claude/Cursor
+  // 只显示思考过程、工具调用和最终报告
   if (message.type === 'thought') {
+    // 思考过程 - 用灰色背景显示
     return (
-      <div className="flex gap-3 my-3">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
-          <Brain size={16} className="text-white" />
+      <div className="flex gap-3 mb-2">
+        <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+          <Brain size={14} className="text-gray-600" />
         </div>
-        <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 p-4 rounded-2xl rounded-tl-none shadow-sm">
-          <div className="flex items-center gap-2 mb-2 text-violet-700">
-            <Sparkles size={14} className="text-violet-500" />
-            <span className="text-xs font-semibold uppercase tracking-wide text-violet-500">思考过程</span>
+        <div className="flex-1">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+            <div className="font-semibold text-gray-500 mb-1">💭 Manus 思考中...</div>
+            <div className="whitespace-pre-wrap">{message.content}</div>
           </div>
-          <ReactMarkdown className="prose prose-sm max-w-none text-gray-700">
-            {message.content}
-          </ReactMarkdown>
         </div>
       </div>
     );
   }
 
-  // 问候消息 - 纯 markdown 渲染
-  if (message.type === 'greeting') {
+  if (message.type === 'tool_call') {
+    // 工具调用 - 用蓝色背景显示
     return (
-      <div className="flex gap-3 my-4">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
-          <Bot size={16} className="text-white" />
-        </div>
-        <div className="flex-1 prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-indigo-900 prose-a:text-indigo-700" style={{ '--tw-prose-links': '#4f46e5' }}>
-          <style>{`
-            .prose ul ::marker {
-              color: #000;
-            }
-            .prose ol ::marker {
-              color: #000;
-            }
-          `}</style>
-          <ReactMarkdown>
-            {message.content}
-          </ReactMarkdown>
+      <div className="flex gap-3 mb-2">
+        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+          <Zap size={14} className="text-blue-600" />
+              </div>
+        <div className="flex-1">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
+            <pre className="whitespace-pre-wrap font-mono text-gray-700 overflow-x-auto">
+              {message.content}
+            </pre>
+          </div>
         </div>
       </div>
     );
   }
 
-  // 最终答案 - 全新设计，增强 Markdown 渲染样式
-  return (
-    <div className="flex gap-3 my-4">
-      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
-        <Bot size={16} className="text-white" />
+  if (message.type === 'greeting' || message.type === 'answer') {
+    // 最终报告 - 用白色背景，支持 Markdown
+    return (
+      <div className="flex gap-3 mb-4">
+        <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
+          <Bot size={16} className="text-white" />
+              </div>
+        <div className="flex-1">
+          <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm">
+            <div style={{ '--tw-prose-links': '#4f46e5' }}>
+              <MarkdownRenderer
+                content={message.content}
+                size="sm"
+                variant={message.type === 'greeting' ? 'greeting' : 'compact'}
+              />
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="flex-1 bg-gray-50 border border-gray-200 p-5 rounded-2xl rounded-tl-none shadow-md">
-        <ReactMarkdown
-          className="prose prose-sm max-w-none
-            prose-headings:text-gray-800 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
-            prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg
-            prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-4
-            prose-strong:text-gray-800 prose-strong:font-semibold
-            prose-ul:list-disc prose-ul:ml-6 prose-ul:mb-4
-            prose-ol:list-decimal prose-ol:ml-6 prose-ol:mb-4
-            prose-li:text-gray-700 prose-li:mb-2
-            prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-            prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic
-            prose-a:text-indigo-600 prose-a:underline hover:prose-a:text-indigo-800"
-          components={{
-            // 自定义占位符样式（如 summary, keywords 等）
-            p: ({node, children, ...props}) => {
-              const text = String(children);
-              if (text.includes('summary') || text.includes('keywords') || text.match(/^[a-z_]+$/)) {
-                return (
-                  <div className="bg-gray-100 border border-gray-300 rounded px-3 py-2 my-2 inline-block">
-                    <code className="text-gray-600 text-sm">{text}</code>
-                  </div>
-                );
-              }
-              return <p {...props}>{children}</p>;
-            }
-          }}
-        >
-          {message.content}
-        </ReactMarkdown>
+    );
+  }
+
+  if (message.type === 'error') {
+    // 错误信息
+    return (
+      <div className="flex gap-3 mb-4">
+        <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+          <AlertCircle size={16} className="text-red-600" />
+        </div>
+        <div className="flex-1">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            {message.content}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // 其他类型不显示
+  return null;
 };
 
 export default App;
