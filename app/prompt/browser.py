@@ -1,3 +1,11 @@
+"""Prompts for the Browser Agent."""
+
+from app.prompt.base import PromptTemplate
+
+# ============================================================================
+# 核心提示词（使用新模板系统）
+# ============================================================================
+
 SYSTEM_PROMPT = """\
 You are an AI agent designed to automate browser tasks. Your goal is to accomplish the ultimate task following the rules.
 
@@ -70,7 +78,41 @@ Common action sequences:
 Your responses must be always JSON with the specified format.
 """
 
-NEXT_STEP_PROMPT = """
+# 使用新模板系统的 NEXT_STEP_PROMPT
+NEXT_STEP_PROMPT = PromptTemplate.from_template("""
+What should I do next to achieve my goal?
+
+When you see [Current state starts here], focus on the following:
+- Current URL and page title{url}
+- Available tabs{tabs}
+- Interactive elements and their indices
+- Content above{above} or below{below} the viewport (if indicated)
+- Any action results or errors{results}
+
+For browser interactions:
+- To navigate: browser_use with action="go_to_url", url="..."
+- To click: browser_use with action="click_element", index=N
+- To type: browser_use with action="input_text", index=N, text="..."
+- To extract: browser_use with action="extract_content", goal="..."
+- To scroll: browser_use with action="scroll_down" or "scroll_up"
+
+Consider both what's visible and what might be beyond the current viewport.
+Be methodical - remember your progress and what you've learned so far.
+
+If you want to stop the interaction at any point, use the `terminate` tool/function call.
+""")
+
+# 预填充空白值的便捷模板（展示 partial 功能）
+BASE_BROWSER_PROMPT = NEXT_STEP_PROMPT.partial(
+    url="",           # 默认无 URL 信息
+    tabs="",          # 默认无标签页信息
+    above="",         # 默认无上方内容
+    below="",         # 默认无下方内容
+    results="",       # 默认无结果信息
+)
+
+# 原有字符串版本（向后兼容）
+NEXT_STEP_PROMPT_STR = """
 What should I do next to achieve my goal?
 
 When you see [Current state starts here], focus on the following:

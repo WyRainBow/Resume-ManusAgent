@@ -270,6 +270,13 @@ class LLM:
         """
         Format messages for LLM by converting them to OpenAI message format.
 
+        Note: This system uses SharedMemory (ResumeDataStore) for context passing,
+        not tool messages. Therefore:
+        1. tool role messages are completely excluded from LLM requests
+        2. tool_calls fields are removed from assistant messages
+
+        This avoids OpenAI API constraint: "tool_calls must be followed by tool messages"
+
         Args:
             messages: List of messages that can be either dict or Message objects
             supports_images: Flag indicating if the target model supports image inputs
@@ -300,6 +307,24 @@ class LLM:
                 # If message is a dict, ensure it has required fields
                 if "role" not in message:
                     raise ValueError("Message dict must contain 'role' field")
+
+                # 跳过 tool 消息 - 上下文通过 SharedMemory 传递
+                if message.get("role") == "tool":
+                    continue
+
+                # 对于有 tool_calls 的 assistant 消息，移除 tool_calls 字段
+                # 因为没有对应的 tool 消息，会导致 API 验证失败
+                # 注意：不要将工具调用摘要作为内容，这会导致 LLM 重复输出
+                if message.get("role") == "assistant" and message.get("tool_calls"):
+                    message = message.copy()
+                    del message["tool_calls"]
+
+                    # 如果有实际内容，保留内容
+                    # 如果没有实际内容（只有工具调用），跳过这条消息
+                    existing_content = message.get("content", "")
+                    if not existing_content or not existing_content.strip():
+                        # 跳过只有工具调用没有内容的消息
+                        continue
 
                 # Process base64 images if present and model supports images
                 if supports_images and message.get("base64_image"):
@@ -338,7 +363,7 @@ class LLM:
                     # Just remove the base64_image field and keep the text content
                     del message["base64_image"]
 
-                if "content" in message or "tool_calls" in message:
+                if "content" in message:
                     formatted_messages.append(message)
                 # else: do not include the message
             else:

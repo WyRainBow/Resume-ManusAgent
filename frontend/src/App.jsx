@@ -1,23 +1,171 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Bot, Brain, Zap, AlertCircle, History, X, Clock, RotateCcw } from 'lucide-react';
-import MarkdownRenderer from './components/MarkdownRenderer';
+import { Send, Bot, User, Loader2, Terminal, FileText, ChevronDown, ChevronUp, X, Eye, Sparkles, Brain, Zap, CheckCircle2, AlertCircle, Wrench, Search, Edit, BarChart, MessageSquare, Trash2, StopCircle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import HTMLTemplateRenderer from './components/HTMLTemplateRenderer';
 import logger from './utils/logger';
+
+// 示例简历数据
+const SAMPLE_RESUME = {
+  id: 'sample-001',
+  title: '前端工程师简历',
+  basic: {
+    name: '张三',
+    title: '高级前端工程师',
+    email: 'zhangsan@example.com',
+    phone: '13800138000',
+    location: '北京',
+    employementStatus: '在职，看机会'
+  },
+  education: [
+    {
+      id: 'edu-1',
+      school: '北京大学',
+      degree: '学士',
+      major: '计算机科学与技术',
+      startDate: '2018-09',
+      endDate: '2022-06',
+      gpa: '3.8/4.0',
+      description: '<p>主修课程：数据结构、算法、计算机网络、操作系统</p>'
+    }
+  ],
+  experience: [
+    {
+      id: 'exp-1',
+      company: '阿里巴巴',
+      position: '前端工程师',
+      date: '2022-07 - 至今',
+      details: '<p>负责淘宝前端页面开发，使用 React 和 TypeScript</p><p>优化页面性能，提升用户体验</p>'
+    }
+  ],
+  projects: [
+    {
+      id: 'proj-1',
+      name: '开源组件库',
+      role: '核心开发者',
+      date: '2023-01 - 2023-12',
+      description: '<p>开发了一套 React 组件库，已在 GitHub 获得 1000+ stars</p>',
+      link: 'https://github.com/example/ui-lib'
+    }
+  ],
+  openSource: [
+    {
+      id: 'os-1',
+      name: 'Vue.js',
+      role: '贡献者',
+      description: '<p>修复了多个 bug，参与了新功能开发</p>',
+      repo: 'https://github.com/vuejs/core'
+    }
+  ],
+  awards: [
+    {
+      id: 'award-1',
+      title: '优秀员工',
+      issuer: '阿里巴巴',
+      date: '2023-12'
+    }
+  ],
+  skillContent: '<p><strong>前端技能：</strong>React, Vue, TypeScript, HTML/CSS</p><p><strong>后端技能：</strong>Node.js, Python</p>',
+  customData: {},
+  menuSections: [
+    { id: 'basic', title: '基本信息', icon: '', enabled: true, order: 0 },
+    { id: 'skills', title: '专业技能', icon: '', enabled: true, order: 1 },
+    { id: 'experience', title: '工作经历', icon: '', enabled: true, order: 2 },
+    { id: 'projects', title: '项目经历', icon: '', enabled: true, order: 3 },
+    { id: 'openSource', title: '开源经历', icon: '', enabled: true, order: 4 },
+    { id: 'awards', title: '荣誉奖项', icon: '', enabled: true, order: 5 },
+    { id: 'education', title: '教育经历', icon: '', enabled: true, order: 6 },
+  ],
+  draggingProjectId: null,
+  globalSettings: {},
+  activeSection: 'basic'
+};
+
+// localStorage keys
+const STORAGE_KEYS = {
+  MESSAGES: 'openmanus_chat_messages',
+  RESUME_DATA: 'openmanus_resume_data',
+  SHOW_RESUME_PANEL: 'openmanus_show_resume_panel'
+};
+
+// 从 localStorage 加载消息历史
+const loadMessagesFromStorage = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.MESSAGES);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      console.log(`📜 恢复 ${parsed.length} 条历史消息`);
+      return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to load messages from storage:', e);
+  }
+  return [];
+};
+
+// 从 localStorage 加载简历数据
+const loadResumeDataFromStorage = () => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.RESUME_DATA);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.error('Failed to load resume data from storage:', e);
+  }
+  return SAMPLE_RESUME;
+};
+
+// 保存消息到 localStorage
+const saveMessagesToStorage = (messages) => {
+  try {
+    // 只保存最近的 100 条消息，避免存储溢出
+    const toSave = messages.slice(-100);
+    localStorage.setItem(STORAGE_KEYS.MESSAGES, JSON.stringify(toSave));
+  } catch (e) {
+    console.error('Failed to save messages to storage:', e);
+  }
+};
+
+// 保存简历数据到 localStorage
+const saveResumeDataToStorage = (data) => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.RESUME_DATA, JSON.stringify(data));
+  } catch (e) {
+    console.error('Failed to save resume data to storage:', e);
+  }
+};
 
 function App() {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([]);
+  // 从 localStorage 恢复消息历史
+  const [messages, setMessages] = useState(() => loadMessagesFromStorage());
   const [status, setStatus] = useState('idle'); // idle, connecting, processing
   const [ws, setWs] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [chatHistory, setChatHistory] = useState([]);
-  const [checkpointHistory, setCheckpointHistory] = useState([]);
+  const wsRef = useRef(null); // 使用 ref 保存 WebSocket 引用，避免闭包问题
   const messagesEndRef = useRef(null);
+  const [showResumePanel, setShowResumePanel] = useState(false);
+  // 从 localStorage 恢复简历数据
+  const [resumeData, setResumeData] = useState(() => loadResumeDataFromStorage());
+  const [showThinkingProcess, setShowThinkingProcess] = useState(false);
+
+  // 监听 messages 变化，自动保存到 localStorage
+  useEffect(() => {
+    saveMessagesToStorage(messages);
+  }, [messages]);
+
+  // 监听 resumeData 变化，自动保存到 localStorage
+  useEffect(() => {
+    saveResumeDataToStorage(resumeData);
+  }, [resumeData]);
 
   useEffect(() => {
     // 自动连接 WebSocket
     connectWebSocket();
     return () => {
-      if (ws) ws.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, []);
 
@@ -29,17 +177,46 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // 从输入中提取简历路径
+  const extractResumePath = (input) => {
+    // 匹配 "简历/路径" 或 "简历 路径" 格式
+    const match = input.match(/简历[\/\s]+([^\s]+)/);
+    return match ? match[1] : null;
+  };
+
   const connectWebSocket = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // 在开发模式下，Vite 会代理 /ws 到后端
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    // 开发环境下直接连接到后端 WebSocket，避免代理问题
+    const wsUrl = 'ws://localhost:8000/ws';
 
     console.log("Connecting to", wsUrl);
+    setStatus('connecting');
     const socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
       console.log('Connected to WebSocket');
       setStatus('idle');
+      setWs(socket); // 连接成功时设置 ws
+      wsRef.current = socket; // 同时保存到 ref
+
+      // 连接成功后，发送历史消息给后端（用于恢复上下文）
+      const storedMessages = loadMessagesFromStorage();
+      if (storedMessages.length > 0) {
+        // 只发送用户和助手的对话消息，过滤掉工具调用等
+        const conversationMessages = storedMessages.filter(msg =>
+          msg.role === 'user' || (msg.role === 'agent' && msg.type === 'answer')
+        );
+
+        if (conversationMessages.length > 0) {
+          console.log(`📜 发送 ${conversationMessages.length} 条历史消息到后端`);
+          socket.send(JSON.stringify({
+            type: 'restore_history',
+            messages: conversationMessages.map(msg => ({
+              role: msg.role === 'user' ? 'user' : 'assistant',
+              content: msg.content || ''
+            }))
+          }));
+        }
+      }
     };
 
     socket.onmessage = (event) => {
@@ -59,32 +236,11 @@ function App() {
     socket.onclose = () => {
       console.log('Disconnected');
       setStatus('disconnected');
+      setWs(null); // 清除 ws 引用
+      wsRef.current = null; // 清除 ref 引用
       // 尝试重连
       setTimeout(connectWebSocket, 3000);
     };
-
-    setWs(socket);
-  };
-
-  // 获取历史对话
-  const fetchHistory = async () => {
-    try {
-      // 获取对话历史
-      const chatRes = await fetch('/api/history/chat');
-      if (chatRes.ok) {
-        const chatData = await chatRes.json();
-        setChatHistory(chatData.messages || []);
-      }
-
-      // 获取 Checkpoint 历史
-      const checkpointRes = await fetch('/api/history/checkpoints');
-      if (checkpointRes.ok) {
-        const checkpointData = await checkpointRes.json();
-        setCheckpointHistory(checkpointData.checkpoints || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch history:', error);
-    }
   };
 
   const handleMessage = (data) => {
@@ -93,51 +249,91 @@ function App() {
 
     setMessages(prev => {
       const newMessages = [...prev];
+      const lastMsg = newMessages[newMessages.length - 1];
 
-      // 只显示 Manus 的思考过程、工具调用和最终报告
-      // 不显示工具返回的原始数据、步骤信息、上下文信息
-
+      // 如果是步骤更新
       if (data.type === 'step') {
-        setStatus('processing');
-        return newMessages; // 不显示步骤信息
+        // 显示步骤信息
+        logger.debug(`步骤更新: ${data.content}`);
+        return [...newMessages, {
+          role: 'system',
+          type: 'step',
+          content: data.content,
+          step: data.step
+        }];
       }
 
-      if (data.type === 'context') {
-        return newMessages; // 不显示上下文信息
-      }
-
+      // 如果是思考过程 (thought)
       if (data.type === 'thought') {
-        // 显示 Manus 的思考过程
+        logger.debug(`思考过程: ${data.content.substring(0, 100)}...`);
+        if (lastMsg && lastMsg.role === 'agent' && lastMsg.type === 'thought') {
+          // 追加到上一条思考消息
+          lastMsg.content += data.content;
+          return [...newMessages];
+        } else {
           return [...newMessages, { role: 'agent', type: 'thought', content: data.content }];
-      }
-
-      if (data.type === 'tool_call') {
-        // 显示工具调用和参数
-        let argsDisplay = '';
-        if (data.args) {
-          try {
-            const argsObj = typeof data.args === 'string' ? JSON.parse(data.args) : data.args;
-            argsDisplay = `\n参数: ${JSON.stringify(argsObj, null, 2)}`;
-          } catch (e) {
-            argsDisplay = `\n参数: ${data.args}`;
-          }
         }
-        const toolInfo = `🔧 调用工具: ${data.tool}${argsDisplay}`;
-        return [...newMessages, { role: 'agent', type: 'tool_call', content: toolInfo, tool: data.tool }];
       }
 
+      // 如果是工具调用 - 检测是否是 CV 相关工具
+      if (data.type === 'tool_call') {
+        // 如果是加载简历或分析简历的工具，自动显示简历面板
+        if (data.tool === 'load_resume_data' || data.tool === 'cv_reader_agent' || data.tool === 'cv_editor_agent') {
+          setShowResumePanel(true);
+        }
+        return [...newMessages, {
+          role: 'agent',
+          type: 'tool_call',
+          tool: data.tool,
+          args: data.args
+        }];
+      }
+
+      // 如果是工具结果
       if (data.type === 'tool_result') {
-        // 不显示工具返回的原始数据，只记录到日志
-        logger.debug(`工具结果: ${data.tool} (已隐藏详细内容)`);
-        return newMessages; // 不显示工具结果
+        const toolResultMsg = {
+          role: 'system',
+          type: 'tool_result',
+          tool: data.tool,
+          content: data.result
+        };
+
+        // 如果是 CV 相关工具执行成功，刷新简历数据
+        const isCVTool = data.tool === 'cv_editor_agent' || data.tool === 'load_resume_data' || data.tool === 'cv_reader_agent';
+        if (isCVTool && data.result && (
+          data.result.includes('✅') ||
+          data.result.includes('Successfully loaded') ||
+          data.result.includes('Candidate:') ||
+          data.result.includes('姓名') ||
+          data.result.includes('电话') ||
+          data.result.includes('##')
+        )) {
+          // 给后端一点时间处理数据
+          setTimeout(() => refreshResumeData(), 300);
+        }
+
+        return [...newMessages, toolResultMsg];
       }
 
+      // 如果是状态更新（包括停止）
+      if (data.type === 'status') {
+        if (data.content === 'stopped') {
+          setStatus('idle');
+          setShowThinkingProcess(false);
+        } else if (data.content === 'processing') {
+          setStatus('processing');
+        }
+        return newMessages;
+      }
+
+      // 如果是最终答案
       if (data.type === 'answer') {
         setStatus('idle');
-        // 显示最终报告
+        setShowThinkingProcess(false); // 思考完成，自动收起
         return [...newMessages, { role: 'agent', type: 'answer', content: data.content }];
       }
 
+      // 错误信息
       if (data.type === 'error') {
         setStatus('idle');
         return [...newMessages, { role: 'system', type: 'error', content: data.content }];
@@ -188,85 +384,105 @@ function App() {
       return;
     }
 
-    // 发送请求
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ prompt: input }));
+    // 发送请求 - 使用 ref 获取最新的 WebSocket 引用
+    const currentWs = wsRef.current || ws;
+    if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+      const resumePath = extractResumePath(input.trim());
+      const message = resumePath
+        ? { prompt: input.trim(), resume_path: resumePath }
+        : { prompt: input.trim() };
+      currentWs.send(JSON.stringify(message));
       setStatus('processing');
       setInput('');
     } else {
-      console.error('WebSocket not connected');
+      logger.error('WebSocket not connected, current state:', currentWs?.readyState);
+      // 尝试重新连接
+      console.log('尝试重新连接 WebSocket...');
+      connectWebSocket();
+      // 等待连接后再发送（延迟发送）
+      setTimeout(() => {
+        const newWs = wsRef.current;
+        if (newWs && newWs.readyState === WebSocket.OPEN) {
+          const resumePath = extractResumePath(input.trim());
+          const message = resumePath
+            ? { prompt: input.trim(), resume_path: resumePath }
+            : { prompt: input.trim() };
+          newWs.send(JSON.stringify(message));
+          setStatus('processing');
+          setInput('');
+        } else {
+          // 如果还是连接不上，显示错误消息
+          setMessages(prev => [...prev, {
+            role: 'agent',
+            type: 'error',
+            content: '⚠️ 无法连接到服务器，请检查后端服务是否运行（端口 8000）。正在尝试重连...'
+          }]);
+        }
+      }, 2000);
     }
   };
 
+  const loadSampleResume = () => {
+    setResumeData(SAMPLE_RESUME);
+    setShowResumePanel(true);
+    // 自动发送加载简历的消息
+    const currentWs = wsRef.current || ws;
+    if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+      currentWs.send(JSON.stringify({ prompt: '请帮我加载示例简历' }));
+      setStatus('processing');
+    }
+  };
+
+  // 停止 AI 执行
+  const handleStop = () => {
+    const currentWs = wsRef.current || ws;
+    if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+      logger.userAction('停止执行', {});
+      currentWs.send(JSON.stringify({ type: 'stop' }));
+      setStatus('idle');
+    }
+  };
+
+  const refreshResumeData = async () => {
+    // 从后端获取最新的简历数据
+    try {
+      const response = await fetch('/api/resume');
+      const data = await response.json();
+      if (data.data && Object.keys(data.data).length > 0) {
+        setResumeData(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to refresh resume data:', error);
+    }
+  };
+
+  // 清除聊天历史
+  const clearHistory = () => {
+    // 直接清除，避免 confirm 弹窗阻塞自动化测试
+    setMessages([]);
+    localStorage.removeItem(STORAGE_KEYS.MESSAGES);
+    console.log('🧹 已清除聊天历史');
+
+    // 通知后端清除 Agent 状态
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'clear_history'
+      }));
+      console.log('🧹 已通知后端清除 Agent 状态');
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
-      {/* 历史侧边栏 */}
-      {showHistory && (
-        <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
-              <Clock size={18} />
-              历史记录
-            </h2>
-            <button
-              onClick={() => setShowHistory(false)}
-              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <X size={18} className="text-gray-500" />
-            </button>
-          </div>
-
-          {/* Checkpoint 历史 */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-4">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">简历版本历史</h3>
-              {checkpointHistory.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">暂无版本记录</p>
-              ) : (
-                <div className="space-y-2">
-                  {checkpointHistory.map((cp) => (
-                    <div key={cp.version} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-indigo-600">版本 {cp.version}</span>
-                        <span className="text-xs text-gray-400">{new Date(cp.timestamp).toLocaleTimeString()}</span>
-                      </div>
-                      <div className="text-xs text-gray-600">{cp.action}</div>
-                      <div className="text-xs text-gray-400 mt-1">Agent: {cp.agent}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 对话历史 */}
-            <div className="p-4 border-t border-gray-200">
-              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">对话历史</h3>
-              {chatHistory.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">暂无对话记录</p>
-              ) : (
-                <div className="space-y-2">
-                  {chatHistory.slice(-10).map((msg, idx) => (
-                    <div key={idx} className={`text-sm p-2 rounded ${msg.role === 'user' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-50 text-gray-600'}`}>
-                      <div className="font-medium text-xs mb-1">{msg.role === 'user' ? '👤 用户' : '🤖 AI'}</div>
-                      <div className="truncate">{msg.content}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 主聊天区域 */}
-      <div className="flex flex-col h-full bg-white shadow-xl overflow-hidden w-full max-w-5xl mx-auto">
+      <div className={`flex flex-col h-full bg-white shadow-xl overflow-hidden transition-all duration-300 ${showResumePanel ? 'w-1/2' : 'w-full max-w-5xl mx-auto'
+        }`}>
 
         {/* Header with Navigation */}
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white transition-all duration-300 ${status === 'processing' ? 'bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-200' : 'bg-indigo-600'
-            }`}>
+              }`}>
               {status === 'processing' ? (
                 <Brain size={20} className="animate-pulse" />
               ) : (
@@ -278,25 +494,42 @@ function App() {
               <div className="flex items-center gap-2 text-xs">
                 <span className={`w-2 h-2 rounded-full ${status === 'disconnected' ? 'bg-red-500' :
                   status === 'processing' ? 'bg-violet-500 animate-pulse' : 'bg-green-500'
-                }`}></span>
+                  }`}></span>
                 <span className="text-gray-500">
                   {status === 'processing' ? '正在思考中...' : (status === 'disconnected' ? '未连接' : '✅ 就绪')}
                 </span>
               </div>
             </div>
           </div>
-
-          {/* 历史按钮 */}
-          <button
-            onClick={() => {
-              setShowHistory(!showHistory);
-              if (!showHistory) fetchHistory();
-            }}
-            className={`p-2 rounded-lg transition-colors ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-gray-100 text-gray-600'}`}
-            title="历史记录"
-          >
-            <History size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <button
+                onClick={clearHistory}
+                className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-all text-sm border border-red-200"
+                title="清除聊天历史"
+              >
+                <Trash2 size={16} />
+                <span className="hidden sm:inline">清除历史</span>
+              </button>
+            )}
+            <button
+              onClick={loadSampleResume}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 rounded-lg hover:from-emerald-100 hover:to-teal-100 transition-all text-sm border border-emerald-200"
+            >
+              <FileText size={16} />
+              <span>加载简历</span>
+            </button>
+            <button
+              onClick={() => setShowResumePanel(!showResumePanel)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${showResumePanel
+                ? 'bg-indigo-100 text-indigo-700'
+                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                }`}
+            >
+              <Eye size={16} />
+              <span>简历预览</span>
+            </button>
+          </div>
         </header>
 
         {/* Messages Area */}
@@ -336,15 +569,50 @@ function App() {
 
           {status === 'processing' && (
             <div className="flex gap-3 my-4">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                <Bot size={16} className="text-white animate-pulse" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Brain size={16} className="text-white animate-pulse" />
               </div>
-              <div className="flex-1 flex items-center">
-                  <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+              <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 rounded-2xl rounded-tl-none shadow-sm">
+                <div
+                  className="p-4 cursor-pointer"
+                  onClick={() => setShowThinkingProcess(!showThinkingProcess)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </div>
+                      <span className="text-violet-700 text-sm font-medium">AI 正在思考中</span>
+                      <Sparkles size={14} className="text-violet-500 animate-pulse" />
+                    </div>
+                    <div className={`transition-transform duration-200 ${showThinkingProcess ? 'rotate-180' : ''}`}>
+                      <ChevronDown size={16} className="text-violet-500 opacity-60" />
+                    </div>
+                  </div>
                 </div>
+                {showThinkingProcess && (
+                  <div className="px-4 pb-4 border-t border-violet-100 pt-3">
+                    {messages.filter(msg => msg.type === 'thought').length > 0 ? (
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {messages
+                          .filter(msg => msg.type === 'thought')
+                          .map((thought, idx) => (
+                            <div key={idx} className="text-xs text-violet-600 bg-white/50 p-2 rounded border border-violet-100">
+                              <ReactMarkdown className="prose prose-xs max-w-none text-violet-700">
+                                {thought.content}
+                              </ReactMarkdown>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-violet-500 italic">
+                        思考过程将在这里显示...
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -363,133 +631,339 @@ function App() {
                   e.preventDefault();
                   handleSubmit(e);
                 }
-                // 支持 Tab 键一键补全
-                if (e.key === 'Tab' && !input.trim()) {
-                  e.preventDefault();
-                  setInput('介绍我的简历');
-                }
               }}
-              placeholder="介绍我的简历"
+              placeholder="告诉我您的信息，帮您生成简历...（例如：我叫张三，是一名后端工程师）"
               className="w-full pl-4 pr-12 py-3 bg-gray-100 border-0 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none min-h-[56px] max-h-32"
               rows="1"
+              disabled={status === 'processing'}
             />
-            {!input.trim() && (
+            {status === 'processing' ? (
               <button
                 type="button"
-                onClick={() => setInput('介绍我的简历')}
-                className="absolute right-14 bottom-3 px-3 py-2 text-xs text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg transition-colors"
-                title="按 Tab 键或点击快速填充"
+                onClick={handleStop}
+                className="absolute right-3 bottom-3 p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                title="停止执行"
               >
-                一键补全
+                <StopCircle size={18} />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="absolute right-3 bottom-3 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send size={18} />
               </button>
             )}
-            <button
-              type="submit"
-              disabled={!input.trim() || status === 'processing'}
-              className="absolute right-3 bottom-3 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <Send size={18} />
-            </button>
           </form>
           <div className="text-center text-xs text-gray-400 mt-2">
             OpenManus may produce inaccurate information.
           </div>
         </footer>
       </div>
+
+      {/* 简历预览面板 */}
+      {showResumePanel && (
+        <div className="w-1/2 border-l border-gray-200 bg-gray-100 flex flex-col overflow-hidden">
+          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+            <div>
+              <h2 className="font-semibold text-gray-800">简历预览</h2>
+              <p className="text-xs text-gray-500">{resumeData.basic?.name || '未命名'} - {resumeData.basic?.title || '无职位'}</p>
+            </div>
+            <button
+              onClick={() => setShowResumePanel(false)}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X size={18} className="text-gray-500" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-6 bg-gray-100">
+            <div className="bg-white rounded-lg shadow-sm p-8 max-w-full mx-auto">
+              <HTMLTemplateRenderer resumeData={resumeData} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// 消息组件 - 只显示 Manus 的思考、工具调用和最终报告
+// 消息组件
 const MessageItem = ({ message }) => {
   const isUser = message.role === 'user';
+  const [isExpanded, setIsExpanded] = useState(false);
 
   if (isUser) {
     return (
-      <div className="flex justify-end mb-4">
-        <div className="bg-indigo-600 text-white px-4 py-2 rounded-lg max-w-[80%]">
+      <div className="flex justify-end">
+        <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 text-white px-5 py-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md">
           {message.content}
         </div>
       </div>
     );
   }
 
-  // 只显示思考过程、工具调用和最终报告
-  if (message.type === 'thought') {
-    // 思考过程 - 用灰色背景显示
+  // 步骤信息展示 - 更现代化的设计
+  if (message.type === 'step') {
     return (
-      <div className="flex gap-3 mb-2">
-        <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-          <Brain size={14} className="text-gray-600" />
-        </div>
-        <div className="flex-1">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
-            <div className="font-semibold text-gray-500 mb-1">💭 Manus 思考中...</div>
-            <div className="whitespace-pre-wrap">{message.content}</div>
-          </div>
+      <div className="flex justify-center my-3">
+        <div className="inline-flex items-center gap-2 bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200 rounded-full px-4 py-2 text-sm text-violet-700 shadow-sm">
+          <Sparkles size={14} className="animate-pulse" />
+          <span className="font-medium">步骤 {message.step}</span>
+          <span className="text-violet-400">·</span>
+          <span>{message.content}</span>
         </div>
       </div>
     );
   }
 
+  // 工具调用展示 - 增强版
   if (message.type === 'tool_call') {
-    // 工具调用 - 用蓝色背景显示
-    return (
-      <div className="flex gap-3 mb-2">
-        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-          <Zap size={14} className="text-blue-600" />
-              </div>
-        <div className="flex-1">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
-            <pre className="whitespace-pre-wrap font-mono text-gray-700 overflow-x-auto">
-              {message.content}
-            </pre>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
 
-  if (message.type === 'greeting' || message.type === 'answer') {
-    // 最终报告 - 用白色背景，支持 Markdown
+    // 工具图标映射
+    const toolIconComponents = {
+      'load_resume_data': null, // 不显示图标
+      'cv_reader_agent': null, // 不显示图标
+      'cv_editor_agent': Edit,
+      'get_resume_structure': BarChart,
+      'create_chat_completion': MessageSquare,
+    };
+
+    const toolColors = {
+      'load_resume_data': 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-700 bg-emerald-50/50',
+      'cv_reader_agent': 'from-blue-50 to-cyan-50 border-blue-200 text-blue-700 bg-blue-50/50',
+      'cv_editor_agent': 'from-violet-50 to-purple-50 border-violet-200 text-violet-700 bg-violet-50/50',
+      'get_resume_structure': 'from-amber-50 to-orange-50 border-amber-200 text-amber-700 bg-amber-50/50',
+    };
+
+    const colorClass = toolColors[message.tool] || 'from-gray-50 to-slate-50 border-gray-200 text-gray-700 bg-gray-50/50';
+    const IconComponent = toolIconComponents[message.tool];
+
     return (
-      <div className="flex gap-3 mb-4">
-        <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center flex-shrink-0">
-          <Bot size={16} className="text-white" />
+      <div className="flex justify-start ml-10 my-2">
+        <div className={`bg-gradient-to-r ${colorClass} border rounded-xl p-3.5 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]`}>
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            <div className="flex items-center gap-3">
+              {IconComponent ? (
+                <div className={`p-1.5 rounded-lg ${message.tool === 'cv_editor_agent' ? 'bg-violet-100' :
+                  message.tool === 'get_resume_structure' ? 'bg-amber-100' :
+                    'bg-gray-100'}`}>
+                  <IconComponent size={16} className={message.tool === 'cv_editor_agent' ? 'text-violet-600' :
+                    message.tool === 'get_resume_structure' ? 'text-amber-600' :
+                      'text-gray-600'} />
+                </div>
+              ) : null}
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm">调用工具</span>
+                <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
               </div>
-        <div className="flex-1">
-          <div className="bg-white border border-gray-200 rounded-lg p-4 text-sm">
-            <div style={{ '--tw-prose-links': '#4f46e5' }}>
-              <MarkdownRenderer
-                content={message.content}
-                size="sm"
-                variant={message.type === 'greeting' ? 'greeting' : 'compact'}
-              />
+            </div>
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <ChevronDown size={16} className="opacity-60" />
             </div>
           </div>
+
+          {isExpanded && (
+            <div className="mt-3 bg-gray-900 text-gray-100 p-4 rounded-lg text-xs font-mono overflow-x-auto shadow-inner border border-gray-800">
+              <div className="flex items-center gap-2 text-gray-400 mb-2 pb-2 border-b border-gray-700">
+                <Terminal size={12} />
+                <span>参数</span>
+              </div>
+              <pre className="text-green-400">{typeof message.args === 'string'
+                ? (message.args.startsWith('{') || message.args.startsWith('[')
+                  ? JSON.stringify(JSON.parse(message.args), null, 2)
+                  : message.args)
+                : JSON.stringify(message.args, null, 2)}</pre>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  if (message.type === 'error') {
-    // 错误信息
-    return (
-      <div className="flex gap-3 mb-4">
-        <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-          <AlertCircle size={16} className="text-red-600" />
-        </div>
-        <div className="flex-1">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-            {message.content}
+  // 工具结果展示 - 增强版
+  if (message.type === 'tool_result') {
+    const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
+    const isSuccess = message.content && (message.content.includes('✅') || message.content.includes('Successfully') || message.content.includes('成功'));
+
+    // 如果是成功状态，显示简洁的成功通知卡片（参考文档中的深色成功通知样式）
+    if (isSuccess) {
+      const successText = message.content.includes('读取') || message.content.includes('load') ? '读取简历内容执行成功' :
+        message.content.includes('分析') || message.content.includes('analyze') ? '分析简历执行成功' :
+          message.content.includes('编辑') || message.content.includes('edit') ? '编辑简历执行成功' :
+            '执行成功';
+
+      return (
+        <div className="flex flex-col justify-start ml-10 my-2">
+          <div className="bg-gray-800 rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg max-w-[90%] cursor-pointer hover:bg-gray-700 transition-colors"
+            onClick={() => setIsExpanded(!isExpanded)}>
+            <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 size={14} className="text-white" />
+            </div>
+            <span className="text-white text-sm font-medium flex-1">{successText}</span>
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <ChevronDown size={16} className="text-gray-400" />
+            </div>
           </div>
+          {isExpanded && (
+            <div className="mt-2 bg-white border border-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner max-w-[90%]">
+              <pre className="text-gray-600 whitespace-pre-wrap">{message.content}</pre>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 工具图标映射
+    const toolIconComponents = {
+      'load_resume_data': null, // 不显示图标
+      'cv_reader_agent': null, // 不显示图标
+      'cv_editor_agent': Edit,
+      'get_resume_structure': BarChart,
+    };
+
+    const IconComponent = toolIconComponents[message.tool];
+
+    return (
+      <div className="flex justify-start ml-10 my-2">
+        <div className={`${isSuccess ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'} border rounded-xl p-3.5 max-w-[90%] w-full shadow-sm transition-all duration-200 hover:shadow-md hover:scale-[1.01]`}>
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            <div className="flex items-center gap-3">
+              {isSuccess ? (
+                <div className="p-1.5 rounded-lg bg-green-100">
+                  <CheckCircle2 size={16} className="text-green-600" />
+                </div>
+              ) : IconComponent ? (
+                <div className="p-1.5 rounded-lg bg-blue-100">
+                  <IconComponent size={16} className="text-blue-600" />
+                </div>
+              ) : null}
+              <div className="flex items-center gap-2">
+                <span className={`font-medium text-sm ${isSuccess ? 'text-green-700' : 'text-blue-700'}`}>
+                  {isSuccess ? '执行成功' : '执行结果'}
+                </span>
+                <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
+              </div>
+            </div>
+            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+              <ChevronDown size={16} className="opacity-60" />
+            </div>
+          </div>
+
+          {isExpanded && (
+            <div className={`mt-3 bg-white border ${isSuccess ? 'border-green-100' : 'border-blue-100'} p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner`}>
+              <pre className={isSuccess ? 'text-green-700' : 'text-gray-600 whitespace-pre-wrap'}>{message.content}</pre>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
-  // 其他类型不显示
-  return null;
+  // 思考过程 - 全新设计，参考 Claude/Cursor，默认收起，可点击展开
+  if (message.type === 'thought') {
+    return (
+      <div className="flex gap-3 my-3">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+          <Brain size={16} className="text-white" />
+        </div>
+        <div className="flex-1 bg-gradient-to-br from-violet-50/50 to-purple-50/50 border border-violet-100 rounded-2xl rounded-tl-none shadow-sm">
+          <div
+            className="p-4 cursor-pointer"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-violet-700">
+                <Sparkles size={14} className="text-violet-500" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-violet-500">思考过程</span>
+              </div>
+              <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                <ChevronDown size={16} className="text-violet-500 opacity-60" />
+              </div>
+            </div>
+          </div>
+          {isExpanded && (
+            <div className="px-4 pb-4 border-t border-violet-100 pt-3">
+              <ReactMarkdown className="prose prose-sm max-w-none text-gray-700">
+                {message.content}
+              </ReactMarkdown>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 问候消息 - 纯 markdown 渲染
+  if (message.type === 'greeting') {
+    return (
+      <div className="flex gap-3 my-4">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+          <Bot size={16} className="text-white" />
+        </div>
+        <div className="flex-1 prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-indigo-900 prose-a:text-indigo-700" style={{ '--tw-prose-links': '#4f46e5' }}>
+          <style>{`
+            .prose ul ::marker {
+              color: #000;
+            }
+            .prose ol ::marker {
+              color: #000;
+            }
+          `}</style>
+          <ReactMarkdown>
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      </div>
+    );
+  }
+
+  // 最终答案 - 参考优秀设计的小字体+清晰层次
+  return (
+    <div className="flex gap-3 my-4">
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
+        <Bot size={16} className="text-white" />
+      </div>
+      <div className="flex-1 bg-gray-50 border border-gray-200 p-4 rounded-2xl rounded-tl-none shadow-md">
+        <ReactMarkdown
+          className="prose max-w-none
+            prose-headings:text-gray-900 prose-headings:font-bold prose-headings:mt-3 prose-headings:mb-2
+            prose-h1:text-base prose-h2:text-sm prose-h3:text-xs
+            prose-p:text-gray-700 prose-p:leading-relaxed prose-p:mb-2 prose-p:text-xs
+            prose-strong:text-gray-900 prose-strong:font-semibold
+            prose-ul:list-disc prose-ul:ml-3 prose-ul:mb-2 prose-ul:text-xs prose-ul:space-y-0.5
+            prose-ol:list-decimal prose-ol:ml-3 prose-ol:mb-2 prose-ol:text-xs prose-ol:space-y-0.5
+            prose-li:text-gray-700 prose-li:mb-1
+            prose-code:text-xs prose-code:bg-gray-200 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+            prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-xs
+            prose-a:text-indigo-600 prose-a:underline hover:prose-a:text-indigo-800"
+          components={{
+            // 自定义占位符样式（如 summary, keywords 等）
+            p: ({ node, children, ...props }) => {
+              const text = String(children);
+              if (text.includes('summary') || text.includes('keywords') || text.match(/^[a-z_]+$/)) {
+                return (
+                  <div className="bg-gray-100 border border-gray-300 rounded px-3 py-2 my-2 inline-block">
+                    <code className="text-gray-600 text-sm">{text}</code>
+                  </div>
+                );
+              }
+              return <p {...props}>{children}</p>;
+            }
+          }}
+        >
+          {message.content}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
 };
 
 export default App;

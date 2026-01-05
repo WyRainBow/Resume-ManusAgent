@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+
+# OpenManus 开发规则
+
+## 核心原则
+
+1. **提示词设计**：系统提示词可稍长，场景化提示词保持简洁
+2. **引导性对话**：原则而非脚本，主动引导、方案提案、逐项确认、流程预告、具体化
+3. **交互规范**：使用中文时设置 working language 为 Chinese，使用"您/您的"，分析后给出下一步建议
+
+## 后端启动方式
+
+**关键**：使用 `bash -c` + `conda shell.bash hook` + `conda activate`，确保后台进程环境变量正确继承。
+
+```bash
+bash -c "eval \"\$(conda shell.bash hook)\" && conda activate openmanus && python -m uvicorn app.web.server:app --host 0.0.0.0 --port 8000 --reload" > logs/backend.log 2>&1 &
+```
+
+**原因**：`conda run` 在后台执行时环境变量未正确继承，需显式初始化 conda hook。

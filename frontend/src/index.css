@@ -54,6 +54,26 @@
   border-radius: 0.25rem;
   font-size: 0.875rem;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: #1f2937;
+}
+
+/* 代码块样式 - 浅色背景，深色文字 */
+.prose pre {
+  background-color: #f9fafb !important;
+  color: #111827 !important;
+  border: 1px solid #e5e7eb;
+}
+
+.prose pre code {
+  background-color: transparent !important;
+  color: #111827 !important;
+}
+
+/* 覆盖 highlight.js 的深色主题 */
+.prose pre.hljs,
+.prose pre code.hljs {
+  background: #f9fafb !important;
+  color: #111827 !important;
 }
 
 .prose strong {

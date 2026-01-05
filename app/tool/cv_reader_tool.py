@@ -81,13 +81,28 @@ Returns the resume content in a structured, readable format."""
         # 教育经历
         education = resume.get("education", [])
         if education:
-            lines.append("## Education")
+            # 去重：根据学校名称和学位去重
+            seen = set()
+            unique_education = []
             for edu in education:
-                lines.append(f"- **{edu.get('school')}** | {edu.get('degree')} in {edu.get('major')}")
-                lines.append(f"  Period: {edu.get('startDate')} - {edu.get('endDate')}")
-                if edu.get('description'):
-                    lines.append(f"  Description: {strip_html(edu.get('description'))}")
-                lines.append("")
+                school = edu.get('school', '')
+                degree = edu.get('degree', '')
+                key = f"{school}_{degree}"
+                if key not in seen and school:
+                    seen.add(key)
+                    unique_education.append(edu)
+
+            if unique_education:
+                lines.append("## Education")
+                for edu in unique_education:
+                    degree = edu.get('degree', '')
+                    major = edu.get('major', '')
+                    degree_major = f"{degree} in {major}" if degree and major else (degree or major or '')
+                    lines.append(f"- **{edu.get('school')}** | {degree_major}")
+                    lines.append(f"  Period: {edu.get('startDate')} - {edu.get('endDate')}")
+                    if edu.get('description'):
+                        lines.append(f"  Description: {strip_html(edu.get('description'))}")
+                    lines.append("")
 
         # 工作经历
         experience = resume.get("experience", [])
@@ -183,9 +198,29 @@ Returns the resume content in a structured, readable format."""
         education = resume.get("education", [])
         if not education:
             return "No education data."
-        lines = []
+
+        # 去重：根据学校名称和学位去重
+        seen = set()
+        unique_education = []
         for edu in education:
-            lines.append(f"- **{edu.get('school')}** | {edu.get('degree')} in {edu.get('major')}")
+            school = edu.get('school', '')
+            degree = edu.get('degree', '')
+            # 创建唯一标识
+            key = f"{school}_{degree}"
+            if key not in seen and school:
+                seen.add(key)
+                unique_education.append(edu)
+
+        if not unique_education:
+            return "No education data."
+
+        lines = []
+        for edu in unique_education:
+            degree = edu.get('degree', '')
+            major = edu.get('major', '')
+            # 格式化学位和专业信息
+            degree_major = f"{degree} in {major}" if degree and major else (degree or major or '')
+            lines.append(f"- **{edu.get('school')}** | {degree_major}")
             lines.append(f"  {edu.get('startDate')} - {edu.get('endDate')}")
         return "\n".join(lines)
 

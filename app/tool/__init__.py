@@ -6,6 +6,7 @@ from app.tool.cv_analyzer_agent_tool import CVAnalyzerAgentTool
 from app.tool.cv_editor_agent_tool import CVEditorAgentTool, GetResumeStructure
 from app.tool.cv_reader_agent_tool import CVReaderAgentTool
 from app.tool.cv_reader_tool import ReadCVContext
+from app.tool.education_analyzer_tool import EducationAnalyzerTool
 from app.tool.planning import PlanningTool
 from app.tool.str_replace_editor import StrReplaceEditor
 from app.tool.terminate import Terminate
@@ -34,6 +35,7 @@ __all__ = [
     "CVAnalyzerAgentTool",
     "CVEditorAgentTool",
     "GetResumeStructure",
+    "EducationAnalyzerTool",
 ]
 
 if Crawl4aiTool:

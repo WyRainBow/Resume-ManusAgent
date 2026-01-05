@@ -57,16 +57,6 @@ Parameters:
     class Config:
         arbitrary_types_allowed = True
 
-    @classmethod
-    def set_resume_data(cls, resume_data: dict):
-        """设置全局简历数据（兼容旧接口）"""
-        ResumeDataStore.set_data(resume_data)
-
-    @classmethod
-    def get_resume_data(cls) -> Optional[dict]:
-        """获取全局简历数据（兼容旧接口）"""
-        return ResumeDataStore.get_data()
-
     async def execute(self, section: str = "all", file_path: Optional[str] = None) -> ToolResult:
         """读取简历数据并返回
 

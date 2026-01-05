@@ -175,20 +175,11 @@ class BrowserUseTool(BaseTool, Generic[Context]):
                         if not isinstance(value, list) or value:
                             browser_config_kwargs[attr] = value
 
-            self.browser = BrowserUseBrowser(BrowserConfig(**browser_config_kwargs))
+            self.browser = BrowserUseBrowser(**browser_config_kwargs)
 
         if self.context is None:
-            context_config = BrowserContextConfig()
-
-            # if there is context config in the config, use it.
-            if (
-                config.browser_config
-                and hasattr(config.browser_config, "new_context_config")
-                and config.browser_config.new_context_config
-            ):
-                context_config = config.browser_config.new_context_config
-
-            self.context = await self.browser.new_context(context_config)
+            # new_context() 在新版本中不接受参数
+            self.context = await self.browser.new_context()
             self.dom_service = DomService(await self.context.get_current_page())
 
         return self.context

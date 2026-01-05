@@ -1,45 +1,51 @@
 """
-CVAnalyzer Agent - 简历深度分析 Agent
+CVAnalyzer Agent - 简历分析协调者
 
-使用 STAR 法则深入分析简历内容质量
+**职责**：协调各模块分析器，聚合分析结果，引导用户优化
+**不做具体分析** - 所有分析逻辑由模块分析器负责
 """
 
-import json
-import re
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from pydantic import Field
 
 from app.agent.toolcall import ToolCallAgent
 from app.prompt.cv_analyzer import (
-    DEEP_ANALYSIS_PROMPT,
-    ERROR_PROMPT,
     NEXT_STEP_PROMPT,
-    SIMPLE_ANALYSIS_PROMPT,
     SYSTEM_PROMPT,
 )
 from app.tool import ToolCollection, Terminate
 from app.tool.cv_reader_tool import ReadCVContext
+from app.tool.education_analyzer_tool import EducationAnalyzerTool
+from app.tool.resume_data_store import ResumeDataStore
+
+
+# 将 PromptTemplate 对象转换为字符串（因为 ToolCallAgent 需要字符串）
+SYSTEM_PROMPT_STR = SYSTEM_PROMPT.format()
+NEXT_STEP_PROMPT_STR = NEXT_STEP_PROMPT.format()
 
 
 class CVAnalyzer(ToolCallAgent):
-    """简历深度分析 Agent
+    """简历分析协调者
 
-    使用 STAR 法则深入分析简历内容质量，包括：
-    - 完整性检查（哪些字段为空）
-    - STAR 法则分析（Situation, Task, Action, Result）
-    - 技能描述分析
-    - 项目描述分析
+    **核心职责**：
+    - 调用模块分析工具获取各模块的专业分析结果
+    - 按 priority_score 排序，决定优化顺序
+    - 聚合结果，输出结构化报告
+    - 为用户提供明确的下一步指引
+
+    **不做具体分析** - 所有分析逻辑由模块分析器负责
     """
 
     name: str = "CVAnalyzer"
-    description: str = "An AI assistant that deeply analyzes CV/Resume content using STAR methodology"
+    description: str = "Coordinator for resume module analysis - calls module analyzers and aggregates results"
 
-    system_prompt: str = SYSTEM_PROMPT
-    next_step_prompt: str = NEXT_STEP_PROMPT
+    system_prompt: str = SYSTEM_PROMPT_STR
+    next_step_prompt: str = NEXT_STEP_PROMPT_STR
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             ReadCVContext(),
+            EducationAnalyzerTool(),
             Terminate(),
         )
     )
@@ -48,9 +54,12 @@ class CVAnalyzer(ToolCallAgent):
 
     max_steps: int = 10
 
-    # 当前加载的简历数据
+    # 当前加载的简历数据（私有属性，不作为 Field）
     _resume_data: Optional[Dict] = None
     _cv_tool: Optional[ReadCVContext] = None
+
+    # 已注册的模块分析器（类变量，不作为 Field）
+    module_analyzers: List[str] = ["education_analyzer"]
 
     class Config:
         arbitrary_types_allowed = True
@@ -66,6 +75,9 @@ class CVAnalyzer(ToolCallAgent):
         """
         self._resume_data = resume_data
 
+        # 设置共享的简历数据存储（供模块分析工具使用）
+        ResumeDataStore.set_data(resume_data)
+
         # 获取 ReadCVContext 工具并设置简历数据
         for tool in self.available_tools.tools:
             if isinstance(tool, ReadCVContext):
@@ -80,7 +92,12 @@ class CVAnalyzer(ToolCallAgent):
 Name: {basic.get('name', 'N/A')}
 Target Position: {basic.get('title', 'N/A')}
 
-Use the read_cv_context tool to get detailed information for STAR analysis.
+可用模块分析器:
+- education_analyzer: 分析教育背景
+
+工作流程:
+1. 用户说"分析简历" → 调用各模块 analyze() → 聚合结果 → 按 priority_score 排序 → 推荐下一步
+2. 用户说"优化XX" → 调用对应模块 optimize() → 返回优化建议和示例
 """
         from app.schema import Message
         self.memory.add_message(Message.system_message(context))
@@ -109,329 +126,72 @@ Use the read_cv_context tool to get detailed information for STAR analysis.
 
         return result
 
-    def _check_completeness(self, resume_data: Dict) -> Dict:
-        """检查简历完整性
+    def aggregate_module_results(self, results: List[Dict]) -> Dict:
+        """聚合各模块分析结果
+
+        Args:
+            results: 各模块返回的分析结果列表
 
         Returns:
-            {
-                "missing_sections": [],
-                "empty_fields": []
+            聚合后的报告
+        """
+        if not results:
+            return {
+                "overall_score": 0,
+                "modules": [],
+                "top_priority": None
             }
-        """
-        missing_sections = []
-        empty_fields = []
 
-        basic = resume_data.get("basic", {})
-        menu_sections = resume_data.get("menuSections", [])
+        # 按 priority_score 降序排序
+        sorted_results = sorted(results, key=lambda x: x.get("priority_score", 0), reverse=True)
 
-        # 检查个人总结
-        summary = basic.get("summary", "")
-        if not summary or summary.strip() == "":
-            empty_fields.append("basic.summary")
+        # 计算整体评分（各模块平均）
+        total_score = sum(r.get("score", 0) for r in results)
+        overall_score = total_score // len(results) if results else 0
 
-        # 检查各模块
-        for section in menu_sections:
-            section_id = section.get("id")
-            enabled = section.get("enabled", True)
+        # 收集所有亮点
+        all_highlights = []
+        for r in results:
+            highlights = r.get("highlights", [])
+            if isinstance(highlights, list):
+                all_highlights.extend(highlights)
 
-            if not enabled:
-                continue
-
-            if section_id == "experience":
-                experience = resume_data.get("experience", [])
-                if not experience:
-                    missing_sections.append("工作经历")
-                else:
-                    for i, exp in enumerate(experience):
-                        if not exp.get("details") or not exp.get("details").strip():
-                            empty_fields.append(f"experience[{i}].details")
-
-            elif section_id == "projects":
-                projects = resume_data.get("projects", [])
-                if not projects:
-                    missing_sections.append("项目经历")
-                else:
-                    for i, proj in enumerate(projects):
-                        if not proj.get("description") or not proj.get("description").strip():
-                            empty_fields.append(f"projects[{i}].description")
-
-            elif section_id == "skills":
-                skill_content = resume_data.get("skillContent", "")
-                if not skill_content or not skill_content.strip():
-                    empty_fields.append("skillContent")
-
-            elif section_id == "education":
-                education = resume_data.get("education", [])
-                if not education:
-                    missing_sections.append("教育经历")
-
-            elif section_id == "awards":
-                awards = resume_data.get("awards", [])
-                if not awards:
-                    # 奖项不是必需的，但如果没有可以建议添加
-                    pass
+        # 收集所有问题
+        all_issues = []
+        for r in results:
+            issues = r.get("issues", [])
+            if isinstance(issues, list):
+                all_issues.extend(issues)
 
         return {
-            "missing_sections": missing_sections,
-            "empty_fields": empty_fields
+            "overall_score": overall_score,
+            "modules": sorted_results,
+            "top_priority": sorted_results[0] if sorted_results else None,
+            "all_highlights": all_highlights,
+            "all_issues": all_issues
         }
 
-    def _analyze_star_for_experience(self, experience: Dict, index: int) -> Dict:
-        """使用 STAR 法则分析工作经历"""
-        details = experience.get("details", "")
-        company = experience.get("company", "公司名")
-        position = experience.get("position", "职位")
+    def get_next_recommendation(self, aggregated: Dict) -> Optional[str]:
+        """根据聚合结果获取下一步优化建议
 
-        # 分析内容
-        star_analysis = {
-            "situation": {"status": "missing", "suggestion": "补充工作背景和环境描述"},
-            "task": {"status": "missing", "suggestion": "明确你的职责和目标"},
-            "action": {"status": "missing", "suggestion": "描述具体采取了什么行动"},
-            "result": {"status": "missing", "suggestion": "添加量化的成果数据"}
-        }
-
-        if details:
-            # 检查是否有数字/量化结果
-            has_numbers = bool(re.search(r'\d+', details))
-
-            # 检查关键词
-            situation_keywords = ["负责", "参与", "在", "期间", "背景", "环境"]
-            task_keywords = ["目标", "职责", "任务", "负责"]
-            action_keywords = ["开发", "实现", "设计", "优化", "完成", "搭建", "构建"]
-            result_keywords = ["提升", "降低", "节省", "获得", "达到", "成功", "%"]
-
-            details_lower = details.lower()
-
-            # 简单的判断逻辑
-            if any(kw in details for kw in situation_keywords):
-                star_analysis["situation"]["status"] = "weak"
-            if any(kw in details for kw in task_keywords):
-                star_analysis["task"]["status"] = "weak"
-            if any(kw in details for kw in action_keywords):
-                star_analysis["action"]["status"] = "good"
-                star_analysis["action"]["note"] = "有具体行动描述"
-            if any(kw in details for kw in result_keywords) or has_numbers:
-                star_analysis["result"]["status"] = "good"
-                star_analysis["result"]["note"] = "有成果描述"
-
-        return {
-            "id": f"exp-{index}",
-            "company": company,
-            "position": position,
-            "star_analysis": star_analysis
-        }
-
-    def _analyze_star_for_project(self, project: Dict, index: int) -> Dict:
-        """使用 STAR 法则分析项目经历"""
-        description = project.get("description", "")
-        name = project.get("name", "项目名")
-
-        star_analysis = {
-            "situation": {"status": "missing", "suggestion": "补充项目背景"},
-            "task": {"status": "missing", "suggestion": "明确项目目标和你的角色"},
-            "action": {"status": "missing", "suggestion": "描述具体技术实现"},
-            "result": {"status": "missing", "suggestion": "添加项目成果和影响"}
-        }
-
-        if description:
-            has_numbers = bool(re.search(r'\d+', description))
-
-            action_keywords = ["使用", "采用", "开发", "实现", "设计", "基于", "运用"]
-            result_keywords = ["成功", "完成", "上线", "部署", "用户", "访问", "性能"]
-
-            if "项目" in description or "背景" in description:
-                star_analysis["situation"]["status"] = "weak"
-            if any(kw in description for kw in action_keywords):
-                star_analysis["action"]["status"] = "good"
-                star_analysis["action"]["note"] = "有技术实现描述"
-            if (any(kw in description for kw in result_keywords) or has_numbers):
-                star_analysis["result"]["status"] = "weak"
-
-        return {
-            "id": f"proj-{index}",
-            "name": name,
-            "star_analysis": star_analysis
-        }
-
-    def _analyze_skills(self, resume_data: Dict) -> list:
-        """分析技能描述"""
-        issues = []
-
-        skill_content = resume_data.get("skillContent", "")
-
-        if skill_content:
-            # 检查模糊词汇
-            vague_keywords = ["熟悉", "了解", "掌握", "知道"]
-
-            for keyword in vague_keywords:
-                if keyword in skill_content:
-                    issues.append({
-                        "keyword": keyword,
-                        "issue": "描述笼统",
-                        "suggestion": f"建议改为更具体的描述，如：'熟练使用 X 开发，有 Y 个项目经验' 或 '精通 X，曾独立完成 Z'"
-                    })
-                    break
-
-        return issues
-
-    def analyze_resume(self, resume_data: Dict) -> Dict:
-        """深度分析简历
+        Args:
+            aggregated: 聚合后的分析结果
 
         Returns:
-            完整的分析报告 JSON
+            下一步优化建议文本
         """
-        basic = resume_data.get("basic", {})
+        top = aggregated.get("top_priority")
+        if not top:
+            return None
 
-        # 1. 提取亮点
-        highlights = []
+        module_name = top.get("module_display_name", top.get("module", ""))
+        priority_score = top.get("priority_score", 0)
+        score = top.get("score", 0)
 
-        experience = resume_data.get("experience", [])
-        companies = [exp.get("company", "") for exp in experience]
-
-        # 大厂识别
-        big_companies = ["腾讯", "阿里", "字节", "百度", "美团", "华为", "小米",
-                        "微软", "谷歌", "苹果", "亚马逊", "Meta", "深言科技"]
-        for company in companies:
-            for bc in big_companies:
-                if bc in company:
-                    highlights.append(f"有{company}实习/工作经历")
-                    break
-
-        # 奖项
-        awards = resume_data.get("awards", [])
-        if awards:
-            highlights.append(f"有{len(awards)}项荣誉奖项")
-
-        # 项目
-        projects = resume_data.get("projects", [])
-        if projects:
-            highlights.append(f"有{len(projects)}个项目经历")
-
-        # 教育背景
-        education = resume_data.get("education", [])
-        if education:
-            for edu in education:
-                degree = edu.get("degree", "")
-                if "硕" in degree or "博" in degree:
-                    highlights.append(f"拥有{edu.get('degree', '')}学历")
-                    break
-
-        # 2. 完整性检查
-        completeness = self._check_completeness(resume_data)
-
-        # 3. STAR 分析
-        content_analysis = {
-            "experience": [self._analyze_star_for_experience(exp, i)
-                          for i, exp in enumerate(experience)],
-            "projects": [self._analyze_star_for_project(proj, i)
-                        for i, proj in enumerate(projects)],
-            "skills": self._analyze_skills(resume_data)
-        }
-
-        # 4. 汇总问题
-        issues = []
-
-        # 高优先级问题
-        if "basic.summary" in completeness.get("empty_fields", []):
-            issues.append({
-                "section": "basic",
-                "field": "summary",
-                "problem": "个人总结为空",
-                "severity": "high",
-                "suggestion": "添加2-3句话的总结，突出核心优势和求职意向"
-            })
-
-        # 检查工作经历
-        for exp_analysis in content_analysis.get("experience", []):
-            star = exp_analysis.get("star_analysis", {})
-            if star.get("result", {}).get("status") == "missing":
-                issues.append({
-                    "section": "experience",
-                    "field": exp_analysis.get("id"),
-                    "problem": f"{exp_analysis.get('company')} 工作经历缺少量化成果",
-                    "severity": "high",
-                    "suggestion": "添加具体的数据成果，如：提升性能 X%、节省 Y 小时、获得 Z 好评"
-                })
-
-        # 技能描述问题
-        if content_analysis.get("skills"):
-            issues.append({
-                "section": "skills",
-                "field": "skillContent",
-                "problem": "技能描述过于笼统",
-                "severity": "medium",
-                "suggestion": "避免使用'熟悉'、'了解'等模糊词汇，改用具体描述"
-            })
-
-        # 5. 优化计划
-        optimization_plan = [
-            {"step": 1, "title": "内容强化", "actions": ["补充个人总结", "完善工作经历描述", "细化技能说明"]},
-            {"step": 2, "title": "信息核验", "actions": ["检查联系方式", "确认时间线准确", "核实技能熟练度"]},
-            {"step": 3, "title": "视觉美化", "actions": ["优化排版", "调整字体", "统一格式"]},
-            {"step": 4, "title": "完成交付", "actions": ["预览简历", "导出PDF", "检查格式"]}
-        ]
-
-        return {
-            "highlights": highlights,
-            "completeness": completeness,
-            "content_analysis": content_analysis,
-            "issues": issues,
-            "optimization_plan": optimization_plan
-        }
-
-    def format_analysis_as_markdown(self, analysis: Dict) -> str:
-        """将分析报告格式化为 Markdown"""
-        lines = []
-        lines.append("📊 **简历分析报告**")
-        lines.append("")
-
-        # 亮点
-        highlights = analysis.get("highlights", [])
-        if highlights:
-            lines.append("✨ **主要亮点**")
-            for h in highlights:
-                lines.append(f"• {h}")
-            lines.append("")
-
-        # 完整性问题
-        completeness = analysis.get("completeness", {})
-        missing_sections = completeness.get("missing_sections", [])
-        empty_fields = completeness.get("empty_fields", [])
-
-        if missing_sections or empty_fields:
-            lines.append("⚠️ **缺少内容**")
-            for ms in missing_sections:
-                lines.append(f"• 缺少 {ms} 模块")
-            for ef in empty_fields:
-                field_name = ef.split(".")[-1]
-                if field_name == "summary":
-                    lines.append(f"• 个人总结为空")
-                elif "details" in ef:
-                    lines.append(f"• 工作经历描述不完整")
-                elif "description" in ef:
-                    lines.append(f"• 项目描述不完整")
-            lines.append("")
-
-        # 问题
-        issues = analysis.get("issues", [])
-        high_issues = [i for i in issues if i.get("severity") == "high"]
-        medium_issues = [i for i in issues if i.get("severity") == "medium"]
-
-        if high_issues:
-            lines.append("🔴 **高优先级问题**")
-            for issue in high_issues:
-                lines.append(f"• {issue.get('problem')} - {issue.get('suggestion')}")
-            lines.append("")
-
-        if medium_issues:
-            lines.append("🟡 **中优先级问题**")
-            for issue in medium_issues:
-                lines.append(f"• {issue.get('problem')} - {issue.get('suggestion')}")
-            lines.append("")
-
-        # 优化流程
-        lines.append("📋 **优化流程**")
-        lines.append("① 内容强化 → ② 信息核验 → ③ 视觉美化 → ④ 完成交付")
-        lines.append("")
-
-        return "\n".join(lines)
+        # 根据 priority_score 和 score 生成建议
+        if priority_score >= 70:
+            return f"优化{module_name}（优先级: {priority_score}/100）"
+        elif score >= 80:
+            return f"查看{module_name}详情（已良好）"
+        else:
+            return f"优化{module_name}"

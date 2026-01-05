@@ -106,6 +106,36 @@ def parse_markdown_content(content: str) -> Dict:
         else:
             resume["basic"]["title"] = "软件工程师"  # 默认值
 
+    # 添加 menuSections，控制前端显示的模块
+    resume["menuSections"] = [
+        {"id": "basic", "title": "基本信息", "icon": "", "enabled": True, "order": 0},
+        {"id": "education", "title": "教育经历", "icon": "", "enabled": True, "order": 1},
+        {"id": "experience", "title": "工作经历", "icon": "", "enabled": True, "order": 2},
+        {"id": "projects", "title": "项目经历", "icon": "", "enabled": True, "order": 3},
+        {"id": "skills", "title": "专业技能", "icon": "", "enabled": True, "order": 4},
+        {"id": "awards", "title": "荣誉奖项", "icon": "", "enabled": True, "order": 5},
+    ]
+
+    # 为每个教育经历添加 id
+    for idx, edu in enumerate(resume.get("education", [])):
+        if "id" not in edu:
+            edu["id"] = f"edu-{idx}"
+
+    # 为每个工作经历添加 id
+    for idx, exp in enumerate(resume.get("experience", [])):
+        if "id" not in exp:
+            exp["id"] = f"exp-{idx}"
+
+    # 为每个项目添加 id
+    for idx, proj in enumerate(resume.get("projects", [])):
+        if "id" not in proj:
+            proj["id"] = f"proj-{idx}"
+
+    # 为每个奖项添加 id
+    for idx, award in enumerate(resume.get("awards", [])):
+        if "id" not in award:
+            award["id"] = f"award-{idx}"
+
     return resume
 
 
@@ -158,6 +188,25 @@ def _parse_basic_info(lines: List[str], start_idx: int, basic: Dict) -> int:
     return i
 
 
+def _get_degree_level(degree: str) -> str:
+    """获取学历层次
+
+    Returns:
+        "博士", "硕士", "本科", "专科", "其他"
+    """
+    if not degree:
+        return "其他"
+    if any(kw in degree for kw in ['博士', 'PhD', 'Doctor']):
+        return "博士"
+    elif any(kw in degree for kw in ['硕士', 'Master', '研究生']):
+        return "硕士"
+    elif any(kw in degree for kw in ['本科', '学士', 'Bachelor']):
+        return "本科"
+    elif any(kw in degree for kw in ['专科', '高职', '大专']):
+        return "专科"
+    return "其他"
+
+
 def _parse_education(lines: List[str], start_idx: int, education: List) -> int:
     """解析教育经历"""
     i = start_idx
@@ -172,17 +221,20 @@ def _parse_education(lines: List[str], start_idx: int, education: List) -> int:
                 education.append(current_edu)
             break
 
-        # 检测新的教育经历
-        if line.startswith('###') or (line and not line.startswith('-') and any(keyword in line for keyword in ['大学', '学院', 'School', 'University'])):
+        # 检测新的教育经历（### 开头明确标记新的子章节）
+        if line.startswith('###'):
+            # 保存上一个教育经历
             if current_edu:
-                education.append(current_edu)
+                # 只有当有有效数据时才添加
+                if current_edu.get("school") or current_edu.get("degree"):
+                    education.append(current_edu)
 
-            # 解析学校行
-            school_match = re.search(r'[*\s]*([^|**\n]+)', line)
-            degree_info = re.findall(r'\*{0,2}([^*]+)\*{0,2}', line)
+            # 解析学校行：### 后面跟着学校信息
+            school_line = re.sub(r'^#+\s*', '', line).strip()
+            parts = re.split(r'[|｜]', school_line)
 
             current_edu = {
-                "school": school_match.group(1).strip() if school_match else "",
+                "school": parts[0].strip().replace('*', '').strip() if parts else "",
                 "degree": "",
                 "major": "",
                 "startDate": "",
@@ -190,26 +242,55 @@ def _parse_education(lines: List[str], start_idx: int, education: List) -> int:
                 "description": ""
             }
 
-            # 尝试提取学位和专业信息
-            for idx, item in enumerate(degree_info[1:], 1):  # 跳过学校名
-                item = item.strip()
-                if any(kw in item for kw in ['本科', '硕士', '博士', '学士', 'Bachelor', 'Master', 'PhD']):
-                    current_edu["degree"] = item
-                elif any(kw in item for kw in ['专业', '级', 'class']):
-                    current_edu["major"] = item
+            # 解析后续的学位和专业信息
+            if len(parts) > 1:
+                for part in parts[1:]:
+                    part = part.strip().replace('*', '')
+                    if any(kw in part for kw in ['本科', '硕士', '博士', '学士', 'Bachelor', 'Master', 'PhD', '专升本', '专科']):
+                        current_edu["degree"] = part
+                    elif any(kw in part for kw in ['专业', '级', 'class']) or '专业' in part:
+                        current_edu["major"] = part
+                    else:
+                        # 如果没有明确的学位/专业标记，根据内容推断
+                        if not current_edu["major"]:
+                            current_edu["major"] = part
+
+        # 检测非 ### 开头的学校行（如 **广东药科大学** | 本科 | 计算机科学与技术专业）
+        elif current_edu is None and (line.startswith('**') or '|' in line) and any(keyword in line for keyword in ['大学', '学院', 'School', 'University']):
+            # 解析学校行
+            school_line = line.replace('**', '').strip()
+            parts = re.split(r'[|｜]', school_line)
+
+            current_edu = {
+                "school": parts[0].strip() if parts else "",
+                "degree": parts[1].strip() if len(parts) > 1 else "",
+                "major": parts[2].strip().replace('专业', '').strip() if len(parts) > 2 else "",
+                "startDate": "",
+                "endDate": "",
+                "description": ""
+            }
 
         elif current_edu:
             # 解析教育经历的详细信息
+            # 去除列表标记
+            original_line = line
             if line.startswith('-') or line.startswith('*'):
                 line = line[1:].strip()
 
-            # 时间信息
-            time_match = re.search(r'(\d{4})[年\-./](\d{1,2})[月\-./]?[^\d]*(\d{4})?[年\-./]?(\d{1,2})?', line)
+            # 时间信息（优先检查，避免误判）
+            time_match = re.search(r'(\d{4})[年\-./](\d{1,2})[月\-./]?[^\d]*(\d{4})?[年\-./]?(\d{1,2})?', original_line)
             if time_match:
                 current_edu["startDate"] = f"{time_match.group(1)}-{time_match.group(2).zfill(2)}"
                 if time_match.group(3):
                     current_edu["endDate"] = f"{time_match.group(3)}-{time_match.group(4).zfill(2)}"
+                # 已经处理了时间行，跳过后续处理
+                i += 1
+                continue
 
+            # 跳过已经处理过的学校信息行（避免重复）
+            if any(keyword in line for keyword in ['大学', '学院', 'School', 'University']):
+                # 这行可能是学校信息，但不是以 ### 开头的，跳过避免重复
+                pass
             # 其他描述信息
             elif line and not line.startswith('#'):
                 if current_edu["description"]:
@@ -219,8 +300,26 @@ def _parse_education(lines: List[str], start_idx: int, education: List) -> int:
 
         i += 1
 
-    if current_edu:
+    # 保存最后一个教育经历
+    if current_edu and (current_edu.get("school") or current_edu.get("degree")):
         education.append(current_edu)
+
+    # 去重：同一学校 + 同一学历层次只保留一条
+    seen = set()
+    unique_education = []
+    for edu in education:
+        school = edu.get("school", "")
+        degree = edu.get("degree", "")
+        level = _get_degree_level(degree)
+        # 创建唯一标识：学校 + 学历层次
+        key = f"{school}_{level}"
+        if key not in seen and school:
+            seen.add(key)
+            unique_education.append(edu)
+
+    # 清空原列表并添加去重后的结果
+    education.clear()
+    education.extend(unique_education)
 
     return i
 
@@ -237,6 +336,7 @@ def _parse_experience(lines: List[str], start_idx: int, experience: List) -> int
         if line.startswith('##') and not line.startswith('###'):
             if current_exp:
                 experience.append(current_exp)
+                current_exp = None  # 防止重复添加
             break
 
         # 检测新的经历（### 开头或包含公司名格式）
@@ -293,6 +393,7 @@ def _parse_projects(lines: List[str], start_idx: int, projects: List) -> int:
         if line.startswith('##') and not line.startswith('###'):
             if current_proj:
                 projects.append(current_proj)
+                current_proj = None  # 防止重复添加
             break
 
         # 检测新项目

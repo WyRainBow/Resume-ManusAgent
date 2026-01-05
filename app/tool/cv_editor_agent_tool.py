@@ -28,23 +28,17 @@ class CVEditorAgentTool(BaseTool):
     name: str = "cv_editor_agent"
     description: str = """Edit and modify CV/Resume data through the CVEditor Agent.
 
-Use this tool when the user wants to:
-- Update personal information (姓名、邮箱、电话、求职意向)
-- Add new entries (教育经历、工作经历、项目经验、获奖情况)
-- Delete unnecessary information
-- Modify existing resume content
+Use this tool when user requests to modify resume content.
 
-The tool requires:
-- path: JSON path to the field (e.g., 'basic.name', 'education[0].school')
-- action: Operation type - 'update', 'add', or 'delete'
-- value: New value (required for update/add operations)
+**Keywords:** 修改, 更新, 改成, 改为, 设置, 添加, 增加, 删除, 去掉
 
-Examples:
-- Update name: path='basic.name', action='update', value='韦宇'
-- Add education: path='education', action='add', value={school:'北京大学', major:'计算机', ...}
-- Delete item: path='experience[1]', action='delete'
+**Parameters:**
+- path: JSON path to the field (e.g., 'basic.name', 'education[0].school', 'education')
+- action: 'update', 'add', or 'delete'
+- value: New value (for update/add operations)
 
-此工具用于帮助求职者编辑和生成自己的简历内容。"""
+Execute modifications immediately when user provides specific details.
+"""
 
     parameters: dict = {
         "type": "object",
@@ -68,16 +62,6 @@ Examples:
 
     class Config:
         arbitrary_types_allowed = True
-
-    @classmethod
-    def set_resume_data(cls, resume_data: dict):
-        """设置全局简历数据引用（兼容旧接口）- 这会被 server.py 调用"""
-        ResumeDataStore.set_data(resume_data)
-
-    @classmethod
-    def get_resume_data(cls) -> Optional[dict]:
-        """获取当前简历数据"""
-        return ResumeDataStore.get_data()
 
     async def execute(self, path: str, action: str, value: Any = None) -> ToolResult:
         """执行简历编辑
@@ -104,6 +88,9 @@ Examples:
             result = await cv_editor.edit_resume(path, action, value)
 
             if result.get("success"):
+                # 同步更新 ResumeDataStore（因为 CVEditor 直接修改了传入的字典引用）
+                ResumeDataStore.set_data(resume_data)
+
                 # 格式化成功消息
                 output = f"✅ {result.get('message', 'Edit completed')}"
                 if "new_value" in result:
@@ -148,8 +135,8 @@ Returns a hierarchical view of all resume fields."""
 
     async def execute(self) -> ToolResult:
         """获取简历结构"""
-        # 使用类方法获取简历数据
-        resume_data = CVEditorAgentTool.get_resume_data()
+        # 使用 ResumeDataStore 获取简历数据
+        resume_data = ResumeDataStore.get_data()
         if not resume_data:
             return ToolResult(
                 output="No resume data loaded. Please use cv_reader_agent tool first to read resume data."

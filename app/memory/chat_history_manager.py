@@ -95,37 +95,3 @@ class ChatHistoryManager:
         """Get the total number of messages in the history."""
         return len(self._history.messages)
 
-    def should_wait_for_user(self, last_ai_message: Optional[str] = None) -> bool:
-        """
-        Determine if the AI should wait for user input.
-
-        Args:
-            last_ai_message: Optional last AI message content
-
-        Returns:
-            True if should wait for user input
-        """
-        if not last_ai_message:
-            messages = self._history.messages
-            if messages and isinstance(messages[-1], AIMessage):
-                last_ai_message = messages[-1].content
-
-        if not last_ai_message:
-            return False
-
-        wait_keywords = [
-            "请回答", "请告诉我", "请提供",
-            "问题", "?", "？",
-            "我最建议先回答",
-            "等待您的", "需要您",
-        ]
-
-        message_lower = last_ai_message.lower()
-        has_wait_keyword = any(kw in message_lower for kw in wait_keywords)
-
-        # Check if message length is reasonable (not a tool call result)
-        if has_wait_keyword and 10 <= len(last_ai_message) < 500:
-            logger.info(f"⏸️ ChatHistory: Detected wait for user input")
-            return True
-
-        return False

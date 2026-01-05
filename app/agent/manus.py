@@ -7,7 +7,7 @@ from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
 from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT, GREETING_TEMPLATE
-from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVReaderAgentTool, GetResumeStructure, Terminate, ToolCollection
+from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVReaderAgentTool, EducationAnalyzerTool, GetResumeStructure, Terminate, ToolCollection
 from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
 from app.tool.python_execute import PythonExecute
@@ -54,6 +54,7 @@ class Manus(ToolCallAgent):
             CVAnalyzerAgentTool(),
             CVEditorAgentTool(),
             GetResumeStructure(),
+            EducationAnalyzerTool(),
         )
     )
 
@@ -71,7 +72,6 @@ class Manus(ToolCallAgent):
     _chat_history: ChatHistoryManager = PrivateAttr(default=None)
     _last_intent: Intent = PrivateAttr(default=None)
     _last_intent_info: Dict[str, Any] = PrivateAttr(default_factory=dict)
-    _should_wait_user: bool = PrivateAttr(default=False)
     _current_resume_path: Optional[str] = PrivateAttr(default=None)
 
     @model_validator(mode="after")
@@ -202,6 +202,7 @@ class Manus(ToolCallAgent):
 
         返回: (system_prompt, next_step_prompt)
         """
+        logger.info(f"🔍 获取到的用户输入: {user_input[:100] if user_input else '(空)'}")
         # 生成简单的上下文描述
         context_parts = []
         if self._conversation_state.context.resume_loaded:
@@ -221,6 +222,20 @@ class Manus(ToolCallAgent):
             if opt.current_question > 0:
                 context_parts.append(f"当前问题: 问题{opt.current_question}")
 
+        # 检查最近的工具调用结果，判断简历是否刚被加载
+        recent_cv_loaded = False
+        for msg in reversed(self.memory.messages[-5:]):
+            if hasattr(msg, 'content') and msg.content:
+                if "CV/Resume Context" in msg.content or "Basic Information" in msg.content:
+                    recent_cv_loaded = True
+                    break
+
+        # 如果最近调用了 cv_reader_agent 并成功，强制更新状态
+        if recent_cv_loaded and not self._conversation_state.context.resume_loaded:
+            self._conversation_state.update_resume_loaded(True)
+            context_parts = ["✅ 简历已加载（刚刚加载成功）"]
+            logger.info("📋 检测到简历已加载，更新状态")
+
         context = "\n".join(context_parts) if context_parts else "初始状态"
 
         # 生成系统提示词（简化版，包含工具列表）
@@ -229,10 +244,187 @@ class Manus(ToolCallAgent):
             context=context
         )
 
-        # 生成下一步提示词（让 LLM 自主决定）
-        next_step = NEXT_STEP_PROMPT
+        # 检查用户输入是否包含教育分析请求
+        user_wants_education = False
+        if user_input:
+            user_lower = user_input.lower()
+            if "教育" in user_lower or "学历" in user_lower or "专业" in user_lower:
+                user_wants_education = True
 
-        logger.info(f"💭 提示词已生成，让 LLM 自主理解和决策")
+        # 生成下一步提示词，加入当前状态提示
+        if self._conversation_state.context.resume_loaded:
+            # 检查是否已经调用了分析工具
+            recent_analysis = False
+            for msg in reversed(self.memory.messages[-3:]):
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        if tc.function.name in ['education_analyzer', 'cv_analyzer_agent']:
+                            recent_analysis = True
+                            break
+                    if recent_analysis:
+                        break
+
+            if recent_analysis:
+                # 分析已完成，检查是否有分析结果返回（检查 tool message）
+                analysis_result_returned = False
+                analysis_tool_name = None
+                for msg in reversed(self.memory.messages[-5:]):
+                    # 检查是否是 tool message（工具返回结果）
+                    if hasattr(msg, 'role') and msg.role == "tool":
+                        if hasattr(msg, 'name') and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
+                            analysis_result_returned = True
+                            analysis_tool_name = msg.name
+                            break
+                    # 也检查 content 中是否包含分析结果的关键字
+                    elif hasattr(msg, 'content') and msg.content:
+                        if "教育经历分析" in msg.content or "优化建议示例" in msg.content or "分析结果" in msg.content:
+                            analysis_result_returned = True
+                            if "教育" in msg.content:
+                                analysis_tool_name = "education_analyzer"
+                            break
+
+                if analysis_result_returned:
+                    # 分析结果已返回，获取分析结果内容
+                    analysis_content = ""
+                    for msg in reversed(self.memory.messages[-10:]):
+                        if msg.role == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
+                            analysis_content = msg.content[:5000]  # 限制长度，但要包含优化建议
+                            break
+
+                    tool_display_name = "教育经历" if analysis_tool_name == "education_analyzer" else "简历"
+                    next_step = f"""## 🚨🚨🚨 CRITICAL: ANALYSIS COMPLETED! OUTPUT RESULTS NOW! 🚨🚨🚨
+
+⛔ **STOP! DO NOT CALL ANY TOOLS!** ⛔
+⛔ **NO cv_editor_agent!** ⛔
+⛔ **NO get_resume_structure!** ⛔
+⛔ **NO terminate!** ⛔
+
+The analysis tool ({analysis_tool_name}) has returned the following result. You MUST present this to the user:
+
+---
+{analysis_content}
+---
+
+## YOUR TASK (OUTPUT TEXT ONLY, NO TOOL CALLS):
+
+用中文输出以下内容：
+
+### 1. 📊 分析结果摘要
+- 综合评分（从上面的结果中提取）
+- 优势列表
+- 问题列表
+
+### 2. 💡 优化建议对比
+找到上面结果中的"优化建议示例"部分，逐条展示：
+
+| 优化项 | 当前内容 | 优化后内容 |
+|--------|----------|------------|
+| 建议1标题 | ❌ current内容 | ✅ optimized内容 |
+| 建议2标题 | ❌ current内容 | ✅ optimized内容 |
+
+### 3. 🎯 我最推荐的优化
+选择最重要的一条，告诉用户：
+"💡 我最推荐优先优化：**【标题】**，因为..."
+
+### 4. 询问用户
+最后问：**"是否要应用这个优化？回复'优化'我将帮您修改，回复'不需要'则结束。"**
+
+---
+
+⚠️ **REMEMBER**:
+- This step = OUTPUT TEXT ONLY
+- Next step (after user replies "优化") = Call cv_editor_agent()
+- DO NOT SKIP AHEAD!"""
+            else:
+                # 简历已加载，提示 LLM 进行分析
+                # user_wants_education 已在上面计算
+                user_wants_full_analysis = False
+                if user_input and not user_wants_education:
+                    user_lower = user_input.lower()
+                    if "简历" in user_lower and "分析" in user_lower:
+                        user_wants_full_analysis = True
+
+                if user_wants_education:
+                    # 检查是否已经调用了 education_analyzer
+                    already_called_education_analyzer = False
+                    for msg in reversed(self.memory.messages[-10:]):
+                        if msg.role == "tool" and msg.name == "education_analyzer":
+                            already_called_education_analyzer = True
+                            break
+                        elif hasattr(msg, 'tool_calls') and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                if tc.function.name == "education_analyzer":
+                                    already_called_education_analyzer = True
+                                    break
+                            if already_called_education_analyzer:
+                                break
+
+                    if not already_called_education_analyzer:
+                        next_step = f"""## 🚨🚨🚨 CRITICAL: USER WANTS EDUCATION ANALYSIS! 🚨🚨🚨
+
+**CURRENT STATE**: ✅ Resume is LOADED!
+
+**USER'S CURRENT REQUEST**: "{user_input}"
+
+**YOUR ACTION**: Call education_analyzer() NOW!
+
+⛔ DO NOT:
+- Call cv_reader_agent (resume already loaded)
+- Assume user said "优化" (they did NOT say that - the user only said "{user_input}")
+- Output text (just call the tool)
+
+✅ DO THIS:
+- Call education_analyzer() with empty arguments: {{}}
+- Wait for the tool result
+- Then output the analysis results
+
+Make the tool call NOW!"""
+                    else:
+                        # 已经调用了，使用分析结果返回的逻辑
+                        next_step = f"""## ANALYSIS COMPLETED - OUTPUT RESULTS NOW!
+
+The education_analyzer() has been called. Output the analysis results to the user.
+
+DO NOT call any tools. Just output the results."""
+                elif user_wants_full_analysis:
+                    next_step = f"""## CURRENT STATE: ✅ Resume is LOADED!
+
+**DO NOT call cv_reader_agent again!** The resume is already loaded.
+
+**USER REQUEST DETECTED: 分析简历**
+
+⚡ YOUR NEXT ACTION: Call cv_analyzer_agent() NOW!
+
+{NEXT_STEP_PROMPT}"""
+                else:
+                    next_step = f"""## CURRENT STATE: ✅ Resume is LOADED!
+
+**DO NOT call cv_reader_agent again!** The resume is already loaded.
+
+Now proceed with analysis based on user's request:
+- If user mentioned education/学历/专业 → Call education_analyzer() NOW
+- If user mentioned resume analysis → Call cv_analyzer_agent() NOW
+
+{NEXT_STEP_PROMPT}"""
+        else:
+            # 简历未加载
+            if user_wants_education and self._current_resume_path:
+                next_step = f"""## 🚨 USER WANTS EDUCATION ANALYSIS - LOAD RESUME FIRST! 🚨
+
+**CURRENT STATE**: ⚠️ Resume NOT loaded yet
+
+**USER'S REQUEST**: "{user_input}"
+**RESUME PATH**: {self._current_resume_path}
+
+**YOUR ACTION**: Call cv_reader_agent(file_path="{self._current_resume_path}") NOW!
+
+After the resume is loaded, you will call education_analyzer() in the next step.
+
+Make the tool call NOW!"""
+            else:
+                next_step = NEXT_STEP_PROMPT
+
+        logger.info(f"💭 提示词已生成，当前状态: {context}")
 
         return system_prompt, next_step
 
@@ -329,8 +521,10 @@ class Manus(ToolCallAgent):
 
                 # 特殊处理：加载简历后更新状态
                 if "load_resume" in tool_name.lower() or "cv_reader" in tool_name.lower():
-                    if "成功" in result or "加载" in result:
+                    # 检测简历是否成功加载（更宽松的条件）
+                    if result and ("CV/Resume Context" in result or "Basic Information" in result or "Education" in result or "成功" in result):
                         self._conversation_state.update_resume_loaded(True)
+                        logger.info("📋 简历已成功加载，状态已更新")
 
         # 同步消息到 ChatHistory
         if self._chat_history:
@@ -348,32 +542,11 @@ class Manus(ToolCallAgent):
             # 检查工具返回的结果
             tool_result = result if result else None
 
-            if tool_result:
-                wait_keywords = [
-                    "问题1", "问题2", "问题3", "问题一", "问题二", "问题三",
-                    "请回答", "我建议先回答", "继续回答", "我最建议先回答"
-                ]
-                has_wait_keyword = any(kw in tool_result for kw in wait_keywords)
-
-                if has_wait_keyword and 50 < len(tool_result) < 2000:
-                    if "error" not in tool_result.lower() and "失败" not in tool_result:
-                        self._should_wait_user = True
-                        logger.info(f"⏸️ Manus: 工具返回包含问题，需要等待用户输入")
-                        return result
-
-            # 检查最后的 AI 消息
+            # 检查最后的 AI 消息（用于调试）
             last_ai_msg = None
             for msg in reversed(self.memory.messages[-3:]):
                 if msg.role == Role.ASSISTANT and msg.content:
                     last_ai_msg = msg.content
                     break
 
-            self._should_wait_user = self._chat_history.should_wait_for_user(last_ai_msg)
-            if self._should_wait_user:
-                logger.info("⏸️ Manus: 检测到需要等待用户输入，将暂停执行")
-
         return result
-
-    def should_wait_for_user(self) -> bool:
-        """检查是否应该等待用户输入"""
-        return self._should_wait_user

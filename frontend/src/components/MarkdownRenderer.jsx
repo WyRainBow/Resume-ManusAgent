@@ -61,8 +61,8 @@ const MarkdownRenderer = ({
       prose-ul:list-disc prose-ul:ml-6 prose-ul:mb-3
       prose-ol:list-decimal prose-ol:ml-6 prose-ol:mb-3
       prose-li:text-gray-700 prose-li:mb-1
-      prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-mono
-      prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:rounded-lg prose-pre:p-4 prose-pre:overflow-x-auto
+      prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:text-gray-800
+      prose-pre:bg-gray-50 prose-pre:text-gray-900 prose-pre:border prose-pre:border-gray-200 prose-pre:rounded-lg prose-pre:p-4 prose-pre:overflow-x-auto
       prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-gray-600
       prose-a:text-indigo-600 prose-a:underline hover:prose-a:text-indigo-800
       prose-table:border-collapse prose-table:w-full prose-table:my-4
@@ -77,7 +77,7 @@ const MarkdownRenderer = ({
       prose-ul:list-disc prose-ul:ml-3 prose-ul:mb-2 prose-ul:text-xs prose-ul:space-y-0.5
       prose-ol:list-decimal prose-ol:ml-3 prose-ol:mb-2 prose-ol:text-xs prose-ol:space-y-0.5
       prose-li:text-gray-700 prose-li:mb-1
-      prose-code:text-xs prose-code:bg-gray-200 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+      prose-code:text-xs prose-code:bg-gray-200 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-gray-800
       prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-xs
       prose-a:text-indigo-600 prose-a:underline hover:prose-a:text-indigo-800
     `,
@@ -99,7 +99,7 @@ const MarkdownRenderer = ({
           if (text.includes('summary') || text.includes('keywords') || text.match(/^[a-z_]+$/)) {
             return (
               <div className="bg-gray-100 border border-gray-300 rounded px-3 py-2 my-2 inline-block">
-                <code className="text-gray-600 text-sm">{text}</code>
+                <code className="text-gray-800 text-sm">{text}</code>
               </div>
             );
           }
@@ -117,7 +117,7 @@ const MarkdownRenderer = ({
               {children}
             </code>
           ) : (
-            <code className="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+            <code className="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono text-gray-800" {...props}>
               {children}
             </code>
           );

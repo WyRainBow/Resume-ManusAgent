@@ -17,6 +17,6 @@ First, you should _always_ include a general thought about what you're going to 
 Then, for every response, you must include exactly _ONE_ tool call/function call.
 
 Remember, you should always include a _SINGLE_ tool call/function call and then wait for a response from the shell before continuing with more discussion and commands. Everything you include in the DISCUSSION section will be saved for future reference.
-If you'd like to issue two commands at once, PLEASE DO NOT DO THAT! Please instead first submit just the first tool call, and then after receiving a response you'll be able to issue the second tool call.
-Note that the environment does NOT support interactive session commands (e.g. python, vim), so please do not invoke them.
+Submit one tool call at a time, then wait for the response before issuing the next call.
+The environment uses non-interactive commands only (e.g. use python script.py instead of python REPL).
 """

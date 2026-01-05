@@ -136,14 +136,6 @@ class BaseTool(ABC, BaseModel):
             },
         }
 
-    # def get_schemas(self) -> Dict[str, List[ToolSchema]]:
-    #     """Get all registered tool schemas.
-
-    #     Returns:
-    #         Dict mapping method names to their schema definitions
-    #     """
-    #     return self._schemas
-
     def success_response(self, data: Union[Dict[str, Any], str]) -> ToolResult:
         """Create a successful tool result.
 
