@@ -281,34 +281,21 @@ class ConversationStateManager:
             result["tool"] = "cv_analyzer_agent"
             self.context.state = ConversationState.ANALYZING
         elif intent == Intent.OPTIMIZE:
-            result["tool"] = "cv_optimizer_agent"
-            result["tool_args"] = {"action": "start_optimization"}
+            # 优化请求 → 先用 Analyzer 分析并给出建议
+            result["tool"] = "cv_analyzer_agent"
+            result["tool_args"] = {"mode": "optimize"}
             self.context.state = ConversationState.OPTIMIZING
         elif intent == Intent.OPTIMIZE_SECTION:
+            # 优化特定模块 → 先用 Analyzer 分析该模块
             section = info.get("section", "工作经历")
-            result["tool"] = "cv_optimizer_agent"
+            result["tool"] = "cv_analyzer_agent"
             result["tool_args"] = {
-                "action": "optimize_section",
+                "mode": "optimize_section",
                 "section": section
             }
             self.context.state = ConversationState.OPTIMIZING
             self.context.optimization.section = section
-            self.context.optimization.current_question = 1
             self.context.optimization.started_at = datetime.now()
-        elif intent == Intent.ANSWER_QUESTION:
-            result["tool"] = "cv_optimizer_agent"
-            question = info.get("question", "问题1")
-            answer_content = info.get("content", user_input)
-            result["tool_args"] = {
-                "action": "optimize_section",
-                "section": self.context.optimization.section or "工作经历",
-                "answer": answer_content,
-                "question": question
-            }
-            q_num = int(question.replace("问题", ""))
-            self.context.optimization.current_question = q_num + 1
-            self.context.optimization.answers[question] = answer_content
-            self.context.state = ConversationState.WAITING_ANSWER
         elif intent == Intent.CONFIRM:
             result = self._handle_confirm()
         elif intent == Intent.CANCEL:
@@ -320,7 +307,7 @@ class ConversationStateManager:
         return result
 
     def _handle_confirm(self) -> Dict[str, Any]:
-        """处理确认意图"""
+        """处理确认意图 - 用户同意建议后直接编辑"""
         result = {
             "intent": Intent.CONFIRM,
             "tool": None,
@@ -330,17 +317,20 @@ class ConversationStateManager:
         }
 
         last_tool = self.context.last_tool_used
+        last_response = self.context.last_ai_response
 
-        if "analyzer" in last_tool or "分析" in self.context.last_ai_response:
-            result["tool"] = "cv_analyzer_agent"
-        elif "optimizer" in last_tool or "优化" in self.context.last_ai_response:
-            result["tool"] = "cv_optimizer_agent"
-            if "工作经历" in self.context.last_ai_response:
-                result["tool_args"] = {"action": "optimize_section", "section": "工作经历"}
-            elif "个人总结" in self.context.last_ai_response:
-                result["tool_args"] = {"action": "optimize_section", "section": "个人总结"}
+        # 如果是 Analyzer 分析后用户确认，则调用 Editor 直接应用修改
+        if "analyzer" in last_tool or "分析" in last_response:
+            result["tool"] = "cv_editor_agent"
+            # 根据上一条 AI 响应判断要编辑哪个模块
+            if "工作经历" in last_response:
+                result["tool_args"] = {"action": "edit", "section": "工作经历"}
+            elif "个人总结" in last_response:
+                result["tool_args"] = {"action": "edit", "section": "个人总结"}
+            elif "技能" in last_response:
+                result["tool_args"] = {"action": "edit", "section": "技能"}
             else:
-                result["tool_args"] = {"action": "start_optimization"}
+                result["tool_args"] = {"action": "auto_apply"}
 
         return result
 

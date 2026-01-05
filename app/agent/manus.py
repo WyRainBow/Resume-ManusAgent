@@ -7,7 +7,7 @@ from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
 from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT, GREETING_TEMPLATE
-from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVOptimizerAgentTool, CVReaderAgentTool, GetResumeStructure, Terminate, ToolCollection
+from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVReaderAgentTool, GetResumeStructure, Terminate, ToolCollection
 from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
 from app.tool.python_execute import PythonExecute
@@ -52,7 +52,6 @@ class Manus(ToolCallAgent):
             Terminate(),
             CVReaderAgentTool(),
             CVAnalyzerAgentTool(),
-            CVOptimizerAgentTool(),
             CVEditorAgentTool(),
             GetResumeStructure(),
         )
@@ -182,7 +181,7 @@ class Manus(ToolCallAgent):
             "意图识别",  # 系统指令
             "cv_reader_agent",  # 工具名
             "cv_analyzer_agent",
-            "cv_optimizer_agent",
+            "cv_editor_agent",
         ]
 
         for msg in reversed(self.memory.messages):

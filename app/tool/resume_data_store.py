@@ -1,7 +1,7 @@
 """
 共享的简历数据存储
 
-所有简历相关工具（cv_reader_agent, cv_analyzer_agent, cv_optimizer_agent, cv_editor_agent）
+所有简历相关工具（cv_reader_agent, cv_analyzer_agent, cv_editor_agent）
 共享同一个简历数据源，确保数据一致性。
 """
 

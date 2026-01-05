@@ -215,12 +215,10 @@ async def set_resume_data(data: dict):
     # 同步更新到所有需要简历数据的工具
     from app.tool.cv_reader_agent_tool import CVReaderAgentTool
     from app.tool.cv_analyzer_agent_tool import CVAnalyzerAgentTool
-    from app.tool.cv_optimizer_agent_tool import CVOptimizerAgentTool
     from app.tool.cv_editor_agent_tool import CVEditorAgentTool
 
     CVReaderAgentTool.set_resume_data(_global_resume_data)
     CVAnalyzerAgentTool.set_resume_data(_global_resume_data)
-    CVOptimizerAgentTool.set_resume_data(_global_resume_data)
     CVEditorAgentTool.set_resume_data(_global_resume_data)
 
     return {"success": True, "message": "Resume data updated"}
