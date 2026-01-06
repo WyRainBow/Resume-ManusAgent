@@ -325,39 +325,8 @@ function App() {
     // 记录用户操作
     logger.userAction('提交消息', { input: input.trim() });
 
-    // 检测是否是问候消息
-    const isGreeting = /^(你好|您好|hi|hello|嗨)$/i.test(input.trim());
-
     // 添加用户消息
     setMessages(prev => [...prev, { role: 'user', content: input }]);
-
-    // 如果是问候，立即返回markdown欢迎消息
-    if (isGreeting) {
-      setMessages(prev => [...prev, {
-        role: 'agent',
-        type: 'greeting',
-        content: `# 👋 你好：我是 OpenManus
-
-很高兴为您服务！我可以帮您：
-
-## ✨ 我的能力
-
-- 📊 **分析简历** - 深入分析简历质量和问题
-- ✏️ **优化简历** - 改进内容和格式、提升竞争力
-- 💡 **求职建议** - 提供专业的求职指导
-- 🎨 **格式美化** - 优化简历结构和排版
-
-## 🚀 如何开始
-
-1. **加载简历** - 请先上传或输入您的简历数据
-2. **分析问题** - 告诉我 “分析一下我的简历“”
-3. **开始优化** - 跟随我的建议逐步优化
-
-请告诉我您的需求：让我们开始吧！ 😊`
-      }]);
-      setInput('');
-      return;
-    }
 
     // 发送请求 - 使用 ref 获取最新的 WebSocket 引用
     const currentWs = wsRef.current || ws;
@@ -917,30 +886,6 @@ const MessageItem = ({ message }) => {
               </ReactMarkdown>
             </div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  // 问候消息 - 纯 markdown 渲染
-  if (message.type === 'greeting') {
-    return (
-      <div className="flex gap-3 my-4">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-md">
-          <Bot size={16} className="text-white" />
-        </div>
-        <div className="flex-1 prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-indigo-900 prose-a:text-indigo-700" style={{ '--tw-prose-links': '#4f46e5' }}>
-          <style>{`
-            .prose ul ::marker {
-              color: #000;
-            }
-            .prose ol ::marker {
-              color: #000;
-            }
-          `}</style>
-          <ReactMarkdown>
-            {message.content}
-          </ReactMarkdown>
         </div>
       </div>
     );

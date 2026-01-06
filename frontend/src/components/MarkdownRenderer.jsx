@@ -34,7 +34,7 @@ const MarkdownRenderer = ({
   content,
   className = '',
   size = 'sm', // 'xs' | 'sm' | 'base'
-  variant = 'default', // 'default' | 'compact' | 'greeting'
+  variant = 'default', // 'default' | 'compact'
   removeEmoji = false // 是否移除 emoji
 }) => {
   // 处理内容：移除 emoji（如果需要）并修复 Markdown 格式问题
@@ -81,10 +81,6 @@ const MarkdownRenderer = ({
       prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-xs
       prose-a:text-indigo-600 prose-a:underline hover:prose-a:text-indigo-800
     `,
-    greeting: `
-      prose-headings:font-bold prose-headings:text-indigo-900
-      prose-a:text-indigo-700
-    `
   };
 
   return (

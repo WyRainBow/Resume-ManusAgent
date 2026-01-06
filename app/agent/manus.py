@@ -7,7 +7,7 @@ from app.agent.browser import BrowserContextHelper
 from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
-from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT, GREETING_TEMPLATE
+from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT
 from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVReaderAgentTool, EducationAnalyzerTool, GetResumeStructure, Terminate, ToolCollection
 from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
@@ -359,7 +359,7 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
                 from app.schema import ToolCall
                 terminate_call = ToolCall(
                     id="call_terminate",
-                    function={"name": "terminate", "arguments": "{}"}
+                    function={"name": "terminate", "arguments": "{\"status\": \"success\"}"}
                 )
                 self.tool_calls = [terminate_call]
                 self.memory.add_message(
@@ -369,6 +369,25 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
                     )
                 )
                 return True
+
+        # 🚨 GREETING 意图：直接回复问候，不进入 LLM 循环
+        if intent == Intent.GREETING:
+            from app.schema import ToolCall
+            greeting_content = "你好！我是 OpenManus，您的简历优化助手。\n\n我可以帮您：\n- 📊 分析简历质量\n- ✏️ 优化简历内容\n- 💡 提供求职建议\n\n请告诉我您的需求，比如「分析简历」或「优化教育经历」。"
+            terminate_call = ToolCall(
+                id="call_terminate",
+                function={"name": "terminate", "arguments": "{\"status\": \"success\"}"}
+            )
+            self.tool_calls = [terminate_call]
+            # 只添加一条消息（使用 from_tool_calls 模式）
+            self.memory.add_message(
+                Message.from_tool_calls(
+                    content=greeting_content,
+                    tool_calls=[terminate_call]
+                )
+            )
+            logger.info("👋 GREETING: 直接返回问候并终止")
+            return True
 
         # 🚨 如果意图识别建议直接使用工具，跳过 LLM
         if tool and self._conversation_state.should_use_tool_directly(intent):
