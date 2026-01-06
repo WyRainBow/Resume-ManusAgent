@@ -31,8 +31,8 @@ Try to understand what went wrong and correct your approach.
 Common issues include:
 - Missing or incorrect parameters
 - Invalid parameter formats
-- Using a tool that's no longer available
-- Attempting an operation that's not supported
+- Using a tool that has changed or become unavailable
+- Attempting an operation outside the tool's capabilities
 
 Please check the tool specifications and try again with corrected parameters.
 """

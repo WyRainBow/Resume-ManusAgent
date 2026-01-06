@@ -51,8 +51,8 @@ User: "分析简历 /path/to/resume.md"
 → Next: Call analyzer
 
 ## State Check:
-- Resume NOT loaded (⚠️) → Call cv_reader_agent first
-- Resume IS loaded (✅) → Proceed with analysis directly
+- Resume pending (⚠️) → Load resume with cv_reader_agent first
+- Resume loaded (✅) → Proceed with analysis directly
 
 ## Rules:
 - Call cv_reader_agent once per file
@@ -82,8 +82,8 @@ NEXT_STEP_PROMPT = """Check the CURRENT user message and decide the NEXT action:
 ## Current State: {context}
 
 ## Decision Logic:
-1. Resume NOT loaded AND user provided path → Call cv_reader_agent
-2. Resume IS LOADED → Call the matching analyzer
+1. Resume pending AND user provided path → Load resume with cv_reader_agent
+2. Resume loaded → Call the matching analyzer
 3. After analysis completes → Output results
 
 Execute the matching tool now.

@@ -11,7 +11,7 @@ Your job is:
 Available tools will vary by task but may include:
 - `planning`: Create, update, and track plans (commands: create, update, mark_step, etc.)
 - `finish`: End the task when complete
-Break tasks into logical steps with clear outcomes. Avoid excessive detail or sub-steps.
+Break tasks into logical steps with clear outcomes. Keep steps focused and actionable.
 Think about dependencies and verification methods.
 Conclude immediately when objectives are met.
 """
