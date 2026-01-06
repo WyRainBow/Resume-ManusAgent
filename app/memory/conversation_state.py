@@ -248,8 +248,14 @@ class ConversationStateManager:
         elif intent == Intent.LOAD_RESUME:
             # 加载简历 - 调用 cv_reader_agent
             result["tool"] = "cv_reader_agent"
-            # 如果 extracted_info 中有文件路径，使用它
-            if info.get("file_path"):
+            # 从用户输入中提取文件路径
+            # 用户输入格式: "加载简历/path/to/file.md" 或 "加载简历 /path/to/file.md"
+            import re
+            file_path_match = re.search(r'加载简历\s*([^\s]+)', user_input)
+            if file_path_match:
+                file_path = file_path_match.group(1)
+                result["tool_args"] = {"file_path": file_path}
+            elif info.get("file_path"):
                 result["tool_args"] = {"file_path": info["file_path"]}
         # UNKNOWN 意图交给 LLM 根据上下文和工具描述判断
 

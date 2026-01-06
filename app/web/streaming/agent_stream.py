@@ -165,6 +165,28 @@ class AgentStream:
                     # 执行一步
                     step_result = await self.agent.step()
 
+                    # 🔍 调试：检查状态变化
+                    if self.agent.state == SchemaAgentState.FINISHED:
+                        logger.info(f"✅ Agent 状态已设置为 FINISHED，准备退出循环")
+                        # 🔑 关键修复：如果状态是 FINISHED，立即退出循环
+                        # 先发送最终答案（如果有）
+                        final_answer = None
+                        for msg in reversed(self.agent.memory.messages):
+                            if msg.role == "assistant" and msg.content:
+                                final_answer = msg.content
+                                break
+
+                        if final_answer and not self._answer_sent_in_loop:
+                            yield AnswerEvent(
+                                content=final_answer,
+                                is_complete=True,
+                                session_id=self._session_id,
+                            )
+                            self._answer_sent_in_loop = True
+
+                        # 退出循环
+                        break
+
                     # 实时发送新增的消息
                     new_messages = self.agent.memory.messages[msg_count_before:]
 

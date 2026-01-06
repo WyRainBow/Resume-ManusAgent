@@ -231,14 +231,19 @@ class Manus(ToolCallAgent):
         return system_prompt, next_step
 
     async def _generate_next_step_prompt(self, intent: "Intent" = None) -> str:
-        """生成下一步提示词（分析结果输出格式）
+        """生成下一步提示词
 
-        对话类意图（GREETING、UNKNOWN）不返回决策逻辑，避免 LLM 误输出。
+        核心设计：
+        1. 对话类意图（GREETING、UNKNOWN）：返回空字符串，让 LLM 自然回答
+        2. 分析完成后：返回结果展示模板
+        3. 其他情况：返回默认的 NEXT_STEP_PROMPT
+
+        这样可以避免每次循环都添加重复的提示词。
         """
-        # 🚨 对话类意图：返回简单的继续指令，不返回复杂的决策逻辑
-        # 这样可以避免 LLM 把决策提示词当作内容输出
+        # 🔑 对话类意图：返回空字符串，避免重复消息
+        # 让 LLM 自然回答用户问题，回答后会自动终止
         if intent in [Intent.GREETING, Intent.UNKNOWN]:
-            return "直接回答用户的问题。如果需要使用工具，根据用户需求调用相应的工具。"
+            return ""
 
         # 检查是否有分析工具刚执行完
         recent_analysis = False
@@ -284,49 +289,51 @@ class Manus(ToolCallAgent):
                 break
 
         tool_display_name = "教育经历" if analysis_tool_name == "education_analyzer" else "简历"
-        return f"""## 🚨🚨🚨 CRITICAL: ANALYSIS COMPLETED! OUTPUT RESULTS NOW! 🚨🚨🚨
+        return f"""## 分析完成，请展示结果
 
-✅ **ACTION: Output text ONLY, then call terminate()** ✅
+分析工具 ({analysis_tool_name}) 已返回结果，请向用户展示：
 
-The analysis tool ({analysis_tool_name}) has returned the following result. You MUST present this to the user:
+{analysis_content[:2000]}
 
----
-{analysis_content}
----
+请用中文向用户展示分析结果摘要和优化建议，然后询问是否要应用优化。"""
 
-## YOUR TASK (OUTPUT TEXT, THEN CALL terminate):
+    def should_auto_terminate(self, content: str, tool_calls: list) -> bool:
+        """自定义自动终止逻辑
 
-用中文输出以下内容：
+        Manus 的终止策略：
+        1. 如果有工具调用，不终止
+        2. 如果 LLM 返回了有意义的内容（问答场景），自动终止
+        3. 如果内容是系统指令的重复，不终止（可能是错误状态）
+        """
+        if tool_calls:
+            return False
 
-### 1. 📊 分析结果摘要
-- 综合评分（从上面的结果中提取）
-- 优势列表
-- 问题列表
+        if not content or not content.strip():
+            return False
 
-### 2. 💡 优化建议对比
-找到上面结果中的"优化建议示例"部分，逐条展示：
+        # 检查是否是有意义的回答（不是系统指令的重复）
+        system_phrases = [
+            "好的，我明白了",
+            "我会直接回答",
+            "如果需要使用工具",
+        ]
 
-| 优化项 | 当前内容 | 优化后内容 |
-|--------|----------|------------|
-| 建议1标题 | ❌ current内容 | ✅ optimized内容 |
-| 建议2标题 | ❌ current内容 | ✅ optimized内容 |
+        # 如果回答太短且包含系统短语，可能是错误状态
+        for phrase in system_phrases:
+            if phrase in content and len(content) < 100:
+                logger.debug(f"⚠️ 检测到可能的系统短语重复，跳过自动终止")
+                return False
 
-### 3. 🎯 我最推荐的优化
-选择最重要的一条，告诉用户：
-"💡 我最推荐优先优化：**【标题】**，因为..."
-
-### 4. 询问用户
-最后问：**"是否要应用这个优化？回复'优化'我将帮您修改，回复'不需要'则结束。"**
-
----
-
-✅ **REMEMBER**:
-1. This step = OUTPUT TEXT to user
-2. After outputting text, call terminate()
-3. Next step (after user replies "优化") = Call cv_editor_agent()"""
+        # 有实质性内容，自动终止
+        return True
 
     async def think(self) -> bool:
-        """Process current state and decide next actions using LLM intent recognition."""
+        """Process current state and decide next actions using LLM intent recognition.
+
+        简化流程：
+        1. 特殊意图（GREETING、LOAD_RESUME）直接处理
+        2. 其他意图交给 LLM 自然处理，依赖自动终止机制
+        """
         if not self._initialized:
             await self.initialize_mcp_servers()
             self._initialized = True
@@ -337,7 +344,7 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
         # 获取最后的用户输入
         user_input = self._get_last_user_input()
 
-        # 🧠 使用 LLM 意图识别（替换规则判断）
+        # 🧠 使用 LLM 意图识别
         intent_result = await self._conversation_state.process_input(
             user_input=user_input,
             conversation_history=self.memory.messages[-5:],
@@ -350,7 +357,7 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
 
         logger.info(f"🧠 意图识别: {intent.value}, 建议工具: {tool}")
 
-        # 🔑 特殊处理：检查是否刚应用了优化，如果是则终止
+        # 🔑 特殊处理：检查是否刚应用了优化
         if getattr(self, '_just_applied_optimization', False):
             self._just_applied_optimization = False
             recent_messages = self.memory.messages[-5:]
@@ -364,79 +371,33 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
                 self.memory.add_message(Message.assistant_message(
                     "✅ 优化已应用！如果需要继续优化其他项目，请告诉我。"
                 ))
-                from app.schema import ToolCall
-                terminate_call = ToolCall(
-                    id="call_terminate",
-                    function={"name": "terminate", "arguments": "{\"status\": \"success\"}"}
-                )
-                self.tool_calls = [terminate_call]
-                self.memory.add_message(
-                    Message.from_tool_calls(
-                        content="✅ 优化完成",
-                        tool_calls=[terminate_call]
-                    )
-                )
-                return True
+                from app.schema import AgentState
+                self.state = AgentState.FINISHED
+                return False
 
-        # 🚨 GREETING 意图：直接回复问候，不进入 LLM 循环
+        # 🎯 GREETING 意图：直接回复问候
         if intent == Intent.GREETING:
-            from app.schema import ToolCall
             greeting_content = "你好！我是 OpenManus，您的简历优化助手。\n\n我可以帮您：\n- 📊 分析简历质量\n- ✏️ 优化简历内容\n- 💡 提供求职建议\n\n请告诉我您的需求，比如「分析简历」或「优化教育经历」。"
-            terminate_call = ToolCall(
-                id="call_terminate",
-                function={"name": "terminate", "arguments": "{\"status\": \"success\"}"}
-            )
-            self.tool_calls = [terminate_call]
-            # 只添加一条消息（使用 from_tool_calls 模式）
-            self.memory.add_message(
-                Message.from_tool_calls(
-                    content=greeting_content,
-                    tool_calls=[terminate_call]
-                )
-            )
+            self.memory.add_message(Message.assistant_message(greeting_content))
             logger.info("👋 GREETING: 直接返回问候并终止")
-            return True
+            from app.schema import AgentState
+            self.state = AgentState.FINISHED
+            return False
 
-        # 🚨 如果意图识别建议直接使用工具，跳过 LLM
+        # 🎯 LOAD_RESUME 意图：直接调用工具
         if tool and self._conversation_state.should_use_tool_directly(intent):
-            # 特殊检查：如果简历已加载且意图是 LOAD_RESUME，跳过重复加载
             if intent == Intent.LOAD_RESUME and self._conversation_state.context.resume_loaded:
                 logger.info("✅ 简历已加载，跳过重复加载")
-                # 生成终止消息，让 LLM 继续处理
                 self.memory.add_message(Message.assistant_message(
                     "简历已成功加载。您可以告诉我接下来需要做什么，比如「分析简历」或「优化某部分」。"
                 ))
-                from app.schema import ToolCall
-                terminate_call = ToolCall(
-                    id="call_resume_loaded",
-                    function={"name": "terminate", "arguments": "{\"status\": \"success\"}"}
-                )
-                self.tool_calls = [terminate_call]
-                self.memory.add_message(
-                    Message.from_tool_calls(
-                        content="简历加载完成",
-                        tool_calls=[terminate_call]
-                    )
-                )
-                return True
+                from app.schema import AgentState
+                self.state = AgentState.FINISHED
+                return False
             return await self._handle_direct_tool_call(tool, tool_args, intent)
 
-        # 🚨 检查是否需要先加载简历（简历未加载且用户请求分析）
-        if not self._conversation_state.context.resume_loaded:
-            import os
-            default_resume = "app/docs/韦宇_简历.md"
-            if os.path.exists(default_resume):
-                # 用户请求分析但简历未加载，先加载
-                if intent in [Intent.ANALYZE, Intent.OPTIMIZE, Intent.OPTIMIZE_SECTION]:
-                    return await self._handle_direct_tool_call("cv_reader_agent", {
-                        "file_path": os.path.abspath(default_resume)
-                    }, intent)
-
-        # 🚨 处理应用优化意图（确认后应用编辑）
-        if intent == Intent.CONFIRM:
-            return await self._handle_optimize_confirm()
-
-        # 动态生成提示词（传入 intent 用于判断是否需要决策逻辑）
+        # 🎯 其他意图：交给 LLM 自然处理
+        # 动态生成提示词
         self.system_prompt, self.next_step_prompt = await self._generate_dynamic_prompts(user_input, intent)
 
         # 检查是否需要浏览器上下文
@@ -450,9 +411,12 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
 
         if browser_in_use:
             browser_prompt = await self.browser_context_helper.format_next_step_prompt()
-            self.next_step_prompt = f"{self.next_step_prompt}\n\n{browser_prompt}"
+            if self.next_step_prompt:
+                self.next_step_prompt = f"{self.next_step_prompt}\n\n{browser_prompt}"
+            else:
+                self.next_step_prompt = browser_prompt
 
-        # 调用父类的 think 方法
+        # 调用父类的 think 方法（会自动处理终止逻辑）
         return await super().think()
 
     async def _handle_direct_tool_call(

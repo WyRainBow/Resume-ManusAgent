@@ -175,8 +175,8 @@ function App() {
   };
 
   const connectWebSocket = () => {
-    // 🔴 后端固定端口 8000，不要修改
-    const wsUrl = 'ws://localhost:8000/ws';
+    // 🔴 后端端口 8080
+    const wsUrl = 'ws://localhost:8080/ws';
 
     console.log("Connecting to", wsUrl);
     setStatus('connecting');
@@ -374,7 +374,7 @@ function App() {
           setMessages(prev => [...prev, {
             role: 'agent',
             type: 'error',
-            content: '⚠️ 无法连接到服务器，请检查后端服务是否运行（端口 8000）。正在尝试重连...'
+            content: '⚠️ 无法连接到服务器，请检查后端服务是否运行（端口 8080）。正在尝试重连...'
           }]);
         }
       }, 2000);

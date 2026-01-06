@@ -298,6 +298,23 @@ class LLM:
         """
         formatted_messages = []
 
+        # 🔍 DEBUG: 记录输入消息
+        logger.debug("=" * 80)
+        logger.debug(f"🔍 [DEBUG] format_messages() - 输入消息 (共 {len(messages)} 条):")
+        for i, msg in enumerate(messages):
+            if isinstance(msg, Message):
+                role = msg.role.value if hasattr(msg.role, 'value') else str(msg.role)
+                content_preview = (msg.content[:100] if msg.content else '')
+                tool_calls_info = f" [tool_calls: {len(msg.tool_calls)}]" if msg.tool_calls else ""
+                tool_call_id_info = f" [tool_call_id: {msg.tool_call_id}]" if msg.tool_call_id else ""
+                logger.debug(f"  [{i}] {role}{tool_calls_info}{tool_call_id_info}: {content_preview}...")
+            elif isinstance(msg, dict):
+                role = msg.get('role', 'unknown')
+                content_preview = (msg.get('content', '')[:100] if msg.get('content') else '')
+                tool_calls_info = f" [tool_calls: {len(msg.get('tool_calls', []))}]" if msg.get('tool_calls') else ""
+                tool_call_id_info = f" [tool_call_id: {msg.get('tool_call_id')}]" if msg.get('tool_call_id') else ""
+                logger.debug(f"  [{i}] {role}{tool_calls_info}{tool_call_id_info}: {content_preview}...")
+
         for message in messages:
             # Convert Message objects to dictionaries
             if isinstance(message, Message):
@@ -351,6 +368,9 @@ class LLM:
                 # Add message if it has content or tool_calls or is a tool message
                 if ("content" in message and message["content"]) or message.get("tool_calls") or message.get("role") == "tool":
                     formatted_messages.append(message)
+                    # 🔍 DEBUG: 记录被添加的消息
+                    if message.get("role") == "tool":
+                        logger.debug(f"  ✅ 添加 tool 消息: tool_call_id={message.get('tool_call_id')}, content长度={len(str(message.get('content', '')))}")
                 # else: do not include the message
             else:
                 raise TypeError(f"Unsupported message type: {type(message)}")
@@ -359,6 +379,16 @@ class LLM:
         for msg in formatted_messages:
             if msg["role"] not in ROLE_VALUES:
                 raise ValueError(f"Invalid role: {msg['role']}")
+
+        # 🔍 DEBUG: 记录格式化后的消息
+        logger.debug(f"🔍 [DEBUG] format_messages() - 格式化后消息 (共 {len(formatted_messages)} 条):")
+        for i, msg in enumerate(formatted_messages):
+            role = msg.get('role', 'unknown')
+            content_preview = (msg.get('content', '')[:100] if msg.get('content') else '')
+            tool_calls_info = f" [tool_calls: {len(msg.get('tool_calls', []))}]" if msg.get('tool_calls') else ""
+            tool_call_id_info = f" [tool_call_id: {msg.get('tool_call_id')}]" if msg.get('tool_call_id') else ""
+            logger.debug(f"  [{i}] {role}{tool_calls_info}{tool_call_id_info}: {content_preview}...")
+        logger.debug("=" * 80)
 
         return formatted_messages
 

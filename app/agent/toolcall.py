@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Any, List, Optional, Union
 
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 
 from app.agent.react import ReActAgent
 from app.exceptions import TokenLimitExceeded
@@ -16,7 +16,13 @@ TOOL_CALL_REQUIRED = "Tool calls required but none provided"
 
 
 class ToolCallAgent(ReActAgent):
-    """Base agent class for handling tool/function calls with enhanced abstraction"""
+    """Base agent class for handling tool/function calls with enhanced abstraction
+
+    核心设计原则：
+    1. 自动终止：当 LLM 返回纯文本回答（无 tool_calls）时，自动终止
+    2. 避免重复：跟踪已处理的用户输入，避免重复添加提示词
+    3. 灵活扩展：子类可以通过重写 should_auto_terminate() 自定义终止逻辑
+    """
 
     name: str = "toolcall"
     description: str = "an agent that can execute tool calls."
@@ -36,11 +42,79 @@ class ToolCallAgent(ReActAgent):
     max_steps: int = 30
     max_observe: Optional[Union[int, bool]] = None
 
+    # 🔑 新增：跟踪状态，避免重复处理
+    _last_processed_user_input: str = PrivateAttr(default="")
+    _pending_next_step: bool = PrivateAttr(default=False)  # 是否有待处理的 next_step
+
+    def should_auto_terminate(self, content: str, tool_calls: List[ToolCall]) -> bool:
+        """判断是否应该自动终止
+
+        子类可以重写此方法来自定义终止逻辑。
+        默认行为：当 LLM 返回纯文本内容（无 tool_calls）时自动终止。
+
+        Args:
+            content: LLM 返回的文本内容
+            tool_calls: LLM 返回的工具调用列表
+
+        Returns:
+            True 表示应该自动终止，False 表示继续执行
+        """
+        # 如果有工具调用，不自动终止
+        if tool_calls:
+            return False
+
+        # 如果有内容但没有工具调用，自动终止（纯文本回答）
+        if content and content.strip():
+            return True
+
+        return False
+
+    def _should_add_next_step_prompt(self) -> bool:
+        """判断是否应该添加 next_step_prompt
+
+        避免重复添加相同的提示词，导致消息膨胀。
+
+        Returns:
+            True 表示应该添加，False 表示跳过
+        """
+        if not self.next_step_prompt:
+            return False
+
+        # 检查最后一条用户消息是否已经是这个 prompt
+        for msg in reversed(self.messages[-3:]):
+            if isinstance(msg, Message):
+                role = msg.role.value if hasattr(msg.role, 'value') else str(msg.role)
+            else:
+                role = msg.get('role', '')
+
+            if role == 'user':
+                content = msg.content if isinstance(msg, Message) else msg.get('content', '')
+                # 如果最近的用户消息就是 next_step_prompt，跳过添加
+                if content and content.strip() == self.next_step_prompt.strip():
+                    return False
+                break
+
+        return True
+
     async def think(self) -> bool:
-        """Process current state and decide next actions using tools"""
-        if self.next_step_prompt:
+        """Process current state and decide next actions using tools
+
+        核心逻辑：
+        1. 只在需要时添加 next_step_prompt（避免重复）
+        2. 调用 LLM 获取响应
+        3. 如果 LLM 只返回文本（无 tool_calls），自动终止
+        4. 如果有 tool_calls，继续执行
+        """
+        # 🔑 关键优化：只在需要时添加 next_step_prompt
+        if self._should_add_next_step_prompt():
             user_msg = Message.user_message(self.next_step_prompt)
             self.messages += [user_msg]
+            logger.debug(f"📝 添加 next_step_prompt: {self.next_step_prompt[:50]}...")
+        else:
+            logger.debug("⏭️ 跳过重复的 next_step_prompt")
+
+        # 🔍 DEBUG: 消息列表概览（简化版）
+        logger.debug(f"📋 消息列表: {len(self.messages)} 条")
 
         try:
             # Get response with tool options
@@ -114,8 +188,12 @@ class ToolCallAgent(ReActAgent):
             if self.tool_choices == ToolChoice.REQUIRED and not self.tool_calls:
                 return True  # Will be handled in act()
 
-            # For 'auto' mode, continue with content if no commands but content exists
+            # 🔑 关键优化：自动终止逻辑
             if self.tool_choices == ToolChoice.AUTO and not self.tool_calls:
+                if self.should_auto_terminate(content, tool_calls):
+                    logger.info(f"✅ 自动终止：LLM 返回纯文本回答，无需继续")
+                    self.state = AgentState.FINISHED
+                    return False
                 return bool(content)
 
             return bool(self.tool_calls)
