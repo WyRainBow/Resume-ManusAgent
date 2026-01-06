@@ -26,18 +26,10 @@ class ConversationState(str, Enum):
 
 
 class Intent(str, Enum):
-    """用户意图"""
-    GREETING = "greeting"
-    LOAD_RESUME = "load_resume"
-    VIEW_RESUME = "view_resume"
-    ANALYZE = "analyze"
-    OPTIMIZE = "optimize"
-    OPTIMIZE_SECTION = "optimize_section"
-    EDIT = "edit"  # 直接编辑请求，如"把学校改成北京大学"
-    ANSWER_QUESTION = "answer_question"
-    CONFIRM = "confirm"
-    CANCEL = "cancel"
-    UNKNOWN = "unknown"
+    """用户意图 - 仅保留需要在代码层面特殊处理的意图"""
+    GREETING = "greeting"  # 问候 - 直接返回，不走 LLM
+    LOAD_RESUME = "load_resume"  # 加载简历 - 需检查重复
+    UNKNOWN = "unknown"  # 未知 - 交由 LLM 根据上下文判断
 
 
 class OptimizationContext(BaseModel):
@@ -127,53 +119,24 @@ class ConversationStateManager:
             history_text = "\n".join(history_parts)
 
         # 构建意图识别提示词
-        prompt = f"""你是一个专业的意图识别助手。根据用户输入和对话上下文，准确识别用户的真实意图。
+        prompt = f"""你是一个意图识别助手。根据用户输入判断是否为特殊意图。
 
-## 对话历史
-{history_text if history_text else "无"}
-
-## 最后一条AI消息
-{last_ai_message if last_ai_message else "无"}
-
-## 用户当前输入
+## 用户输入
 "{user_input}"
 
-## 意图类型说明
-- greeting: 问候（你好、hi、hello等）
-- load_resume: 加载简历（加载、上传、导入简历等）
-- view_resume: 查看/介绍简历（看看简历、介绍简历、简历内容等）
-- analyze: 分析简历（分析、诊断、评估简历等）
-- optimize: 优化简历（整体优化，不指定具体模块）
-- optimize_section: 优化特定模块（如"优化工作经历"、"优化个人总结"、"优化技能"等）
-- edit: 直接编辑修改（如"把学校改成北京大学"、"修改学历"、"将XX改为YY"、"删除XX"等直接的修改指令）
-- answer_question: 回答AI的问题（当AI问了"问题1"、"问题2"、"问题3"后，用户的回答）
-- confirm: 确认（可以、好的、确认、开始、继续等简短确认词）
-- cancel: 取消（取消、不要、算了、停止等）
-- unknown: 其他未知意图
+## 意图类型
+- greeting: 问候语（你好、hi、hello、嘿等）
+- load_resume: 加载简历（包含"加载简历"、"导入简历"等，且后面通常跟着文件路径）
+- unknown: 其他所有情况（交给 LLM 根据上下文处理）
 
-## 识别规则
-1. **编辑识别**：如果用户说"把XX改成YY"、"修改XX"、"将XX改为YY"、"删除XX"等直接的修改指令，则识别为 edit
-2. **回答识别**：如果最后一条AI消息包含"问题1"、"问题2"、"问题3"，且用户输入是回答（不是新问题），则识别为 answer_question
-3. **模块优化识别**：如果用户说"优化XX"（XX是具体模块名），则识别为 optimize_section
-4. **确认识别**：如果用户输入是简短确认词（1-3个字），且上下文中有待确认的内容，则识别为 confirm
-5. **上下文理解**：必须考虑对话历史，不要只看当前输入
-
-## 输出格式（必须是有效的JSON）
+## 输出格式（JSON）
 {{
-    "intent": "意图类型（小写）",
+    "intent": "greeting/load_resume/unknown",
     "confidence": 0.0-1.0,
-    "extracted_info": {{
-        "section": "模块名（如果是optimize_section，如：工作经历、个人总结）",
-        "question": "问题编号（如果是answer_question，如：问题1、问题2、问题3）",
-        "answer_type": "回答类型（如果是answer_question：duties/results/technologies）",
-        "field": "字段名（如果是edit，如：school、name、company）",
-        "old_value": "旧值（如果是edit）",
-        "new_value": "新值（如果是edit）"
-    }},
-    "reasoning": "识别理由（简短，1-2句话）"
+    "reasoning": "简短理由"
 }}
 
-请只返回JSON，不要其他内容。"""
+只返回JSON。"""
 
         try:
             response = await self.llm.ask(
@@ -279,71 +242,16 @@ class ConversationStateManager:
         }
 
         if intent == Intent.GREETING:
+            # 问候 - 不调用工具，交给 LLM 返回问候
             result["tool"] = None
             self.context.state = ConversationState.GREETING
         elif intent == Intent.LOAD_RESUME:
-            # 加载简历 → 调用 cv_reader_agent
+            # 加载简历 - 调用 cv_reader_agent
             result["tool"] = "cv_reader_agent"
             # 如果 extracted_info 中有文件路径，使用它
             if info.get("file_path"):
                 result["tool_args"] = {"file_path": info["file_path"]}
-        elif intent == Intent.VIEW_RESUME:
-            result["tool"] = "cv_reader_agent"
-        elif intent == Intent.ANALYZE:
-            result["tool"] = "cv_analyzer_agent"
-            self.context.state = ConversationState.ANALYZING
-        elif intent == Intent.OPTIMIZE:
-            # 优化请求 → 先用 Analyzer 分析并给出建议
-            result["tool"] = "cv_analyzer_agent"
-            result["tool_args"] = {"mode": "optimize"}
-            self.context.state = ConversationState.OPTIMIZING
-        elif intent == Intent.OPTIMIZE_SECTION:
-            # 优化特定模块 → 先用 Analyzer 分析该模块
-            section = info.get("section", "工作经历")
-            result["tool"] = "cv_analyzer_agent"
-            result["tool_args"] = {
-                "mode": "optimize_section",
-                "section": section
-            }
-            self.context.state = ConversationState.OPTIMIZING
-            self.context.optimization.section = section
-            self.context.optimization.started_at = datetime.now()
-        # EDIT 意图不直接路由，走 LLM 流程让 LLM 解析请求后调用工具
-        elif intent == Intent.CONFIRM:
-            result = self._handle_confirm()
-        elif intent == Intent.CANCEL:
-            self._reset_optimization()
-            result["context_prompt"] = "用户取消了当前操作。"
-        else:
-            result["context_prompt"] = self._generate_context_prompt()
-
-        return result
-
-    def _handle_confirm(self) -> Dict[str, Any]:
-        """处理确认意图 - 用户同意建议后直接编辑"""
-        result = {
-            "intent": Intent.CONFIRM,
-            "tool": None,
-            "tool_args": {},
-            "context_prompt": "",
-            "should_skip_llm": False,
-        }
-
-        last_tool = self.context.last_tool_used
-        last_response = self.context.last_ai_response
-
-        # 如果是 Analyzer 分析后用户确认，则调用 Editor 直接应用修改
-        if "analyzer" in last_tool or "分析" in last_response:
-            result["tool"] = "cv_editor_agent"
-            # 根据上一条 AI 响应判断要编辑哪个模块
-            if "工作经历" in last_response:
-                result["tool_args"] = {"action": "edit", "section": "工作经历"}
-            elif "个人总结" in last_response:
-                result["tool_args"] = {"action": "edit", "section": "个人总结"}
-            elif "技能" in last_response:
-                result["tool_args"] = {"action": "edit", "section": "技能"}
-            else:
-                result["tool_args"] = {"action": "auto_apply"}
+        # UNKNOWN 意图交给 LLM 根据上下文和工具描述判断
 
         return result
 
@@ -396,14 +304,7 @@ class ConversationStateManager:
         return self._generate_context_prompt()
 
     def should_use_tool_directly(self, intent: Intent) -> bool:
-        """判断是否应该直接使用工具"""
-        direct_intents = [
-            Intent.LOAD_RESUME,
-            Intent.VIEW_RESUME,
-            Intent.ANALYZE,
-            Intent.OPTIMIZE,
-            Intent.OPTIMIZE_SECTION,
-            # Intent.EDIT,  # EDIT 意图走 LLM 流程，让 LLM 解析请求后调用工具
-            Intent.ANSWER_QUESTION,
-        ]
-        return intent in direct_intents
+        """判断是否应该直接使用工具（跳过 LLM 决策）"""
+        # 只有 LOAD_RESUME 需要直接调用工具（为了检查重复加载）
+        # 其他所有意图都交给 LLM 根据工具描述和上下文判断
+        return intent == Intent.LOAD_RESUME
