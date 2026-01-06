@@ -185,12 +185,11 @@ class AgentStream:
                                     tool_name = tool_call.function.name
                                     tool_call_id = tool_call.id  # ✅ 获取 tool_call_id
 
-                                    # 🚨 去重：跳过已调用过的工具
-                                    tool_key = f"{tool_name}_{self.agent.current_step}"
-                                    if tool_key in self._sent_tools:
-                                        logger.info(f"[跳过重复工具] {tool_name}")
+                                    # 🚨 去重：使用 tool_call_id 而不是 step 作为键
+                                    if tool_call_id in self._sent_tools:
+                                        logger.info(f"[跳过重复工具] {tool_name} (ID: {tool_call_id[:8]}...)")
                                         continue
-                                    self._sent_tools.add(tool_key)
+                                    self._sent_tools.add(tool_call_id)
 
                                     tool_args = tool_call.function.arguments
                                     logger.info(f"[工具调用] {tool_name} | ID: {tool_call_id} | 参数: {str(tool_args)[:100]}...")
@@ -239,11 +238,11 @@ class AgentStream:
                             for tool_call in msg.tool_calls:
                                 tool_name = tool_call.function.name
                                 tool_call_id = tool_call.id  # ✅ 获取 tool_call_id
-                                tool_key = f"{tool_name}_{self.agent.current_step}"
-                                if tool_key in self._sent_tools:
-                                    logger.info(f"[跳过重复工具] {tool_name}")
+                                # 🚨 去重：使用 tool_call_id 而不是 step 作为键
+                                if tool_call_id in self._sent_tools:
+                                    logger.info(f"[跳过重复工具] {tool_name} (ID: {tool_call_id[:8]}...)")
                                     continue
-                                self._sent_tools.add(tool_key)
+                                self._sent_tools.add(tool_call_id)
 
                                 tool_args = tool_call.function.arguments
                                 logger.info(f"[工具调用] {tool_name} | ID: {tool_call_id} | 参数: {str(tool_args)[:100]}...")

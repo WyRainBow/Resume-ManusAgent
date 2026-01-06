@@ -154,9 +154,24 @@ function App() {
 
   // 从输入中提取简历路径
   const extractResumePath = (input) => {
-    // 匹配 "简历/路径" 或 "简历 路径" 格式
-    const match = input.match(/简历[\/\s]+([^\s]+)/);
-    return match ? match[1] : null;
+    // 匹配多种格式：
+    // - "简历/路径" 或 "简历 路径"
+    // - "我的简历/路径"
+    // - "加载我的简历/路径"
+    // - 以 .md 或 .txt 结尾的路径
+    const patterns = [
+      /简历(?:[\/\s]+)([^\s]+\.(?:md|txt|MD|TXT))/,  // 简历/路径.md
+      /(?:加载|导入|上传)(?:我的)?简历[\/\s]+([^\s]+\.(?:md|txt|MD|TXT))/,  // 加载我的简历/路径.md
+      /([^\s]+\.(?:md|txt))/  // 任何 .md 或 .txt 文件路径
+    ];
+
+    for (const pattern of patterns) {
+      const match = input.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    return null;
   };
 
   const connectWebSocket = () => {
