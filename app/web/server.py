@@ -212,21 +212,34 @@ _global_resume_data = {}
 
 @app.get("/api/resume")
 async def get_resume_data():
-    """获取当前加载的简历数据 - 使用 parse_markdown_resume 解析"""
+    """获取当前加载的简历数据
+
+    优先级:
+    1. ResumeDataStore 中的数据（AI 编辑后的最新数据）
+    2. 从 md 文件解析（首次加载或 ResumeDataStore 为空）
+    """
     from app.utils.resume_parser import parse_markdown_resume
+    from app.tool.resume_data_store import ResumeDataStore
     from pathlib import Path
 
-    resume_path = Path("app/docs/韦宇_简历.md")
+    # 🔑 优先返回内存中的数据（AI 编辑后的最新数据）
+    stored_data = ResumeDataStore.get_data()
+    if stored_data and stored_data.get("basic") and stored_data["basic"].get("name"):
+        logger.debug(f"✅ 返回 ResumeDataStore 中的数据: {stored_data.get('basic', {}).get('name')}")
+        return {"data": stored_data, "source": "memory"}
 
+    # Fallback: 从 md 文件解析
+    resume_path = Path("app/docs/韦宇_简历.md")
     if not resume_path.exists():
-        return {"data": {}}
+        return {"data": {}, "source": "none"}
 
     try:
         data = parse_markdown_resume(str(resume_path))
-        return {"data": data}
+        logger.debug(f"📄 从 md 文件解析数据: {data.get('basic', {}).get('name')}")
+        return {"data": data, "source": "file"}
     except Exception as e:
         logger.error(f"Error parsing resume: {e}")
-        return {"data": {}}
+        return {"data": {}, "source": "error"}
 
 
 def _clean_resume_data(data: dict) -> dict:

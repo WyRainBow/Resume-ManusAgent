@@ -37,6 +37,13 @@ const EMPTY_RESUME = {
   activeSection: 'basic'
 };
 
+// WebSocket 配置
+const WS_CONFIG = {
+  PORT: 8080,
+  PATH: '/ws',
+  getUrl: () => `ws://localhost:${WS_CONFIG.PORT}${WS_CONFIG.PATH}`
+};
+
 // localStorage keys
 const STORAGE_KEYS = {
   MESSAGES: 'openmanus_chat_messages',
@@ -175,8 +182,8 @@ function App() {
   };
 
   const connectWebSocket = () => {
-    // 🔴 后端端口 8080
-    const wsUrl = 'ws://localhost:8080/ws';
+    // 🔴 后端端口配置
+    const wsUrl = WS_CONFIG.getUrl();
 
     console.log("Connecting to", wsUrl);
     setStatus('connecting');
@@ -374,7 +381,7 @@ function App() {
           setMessages(prev => [...prev, {
             role: 'agent',
             type: 'error',
-            content: '⚠️ 无法连接到服务器，请检查后端服务是否运行（端口 8080）。正在尝试重连...'
+            content: `⚠️ 无法连接到服务器，请检查后端服务是否运行（端口 ${WS_CONFIG.PORT}）。正在尝试重连...`
           }]);
         }
       }, 2000);
@@ -420,6 +427,31 @@ function App() {
     }
   };
 
+  // 清除所有缓存（包括消息和简历数据）
+  const clearAllCache = () => {
+    if (window.confirm('确定要清除所有缓存数据吗？这将删除聊天历史和简历数据。')) {
+      // 清除所有 localStorage 数据
+      Object.values(STORAGE_KEYS).forEach(key => {
+        localStorage.removeItem(key);
+      });
+
+      // 重置状态
+      setMessages([]);
+      setResumeData(EMPTY_RESUME);
+
+      // 通知后端清除 Agent 状态
+      const currentWs = wsRef.current || ws;
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.send(JSON.stringify({
+          type: 'clear_history'
+        }));
+      }
+
+      console.log('🧹 已清除所有缓存数据');
+      alert('✅ 所有缓存已清除');
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
       {/* 主聊天区域 */}
@@ -446,19 +478,33 @@ function App() {
                 <span className="text-gray-500">
                   {status === 'processing' ? '正在思考中...' : (status === 'disconnected' ? '未连接' : '✅ 就绪')}
                 </span>
+                {/* WebSocket 端口信息 */}
+                <span className="text-gray-400 ml-2 font-mono">
+                  WS: {WS_CONFIG.PORT}
+                </span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {messages.length > 0 && (
-              <button
-                onClick={clearHistory}
-                className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-all text-sm border border-red-200"
-                title="清除聊天历史"
-              >
-                <Trash2 size={16} />
-                <span className="hidden sm:inline">清除历史</span>
-              </button>
+              <>
+                <button
+                  onClick={clearHistory}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-all text-sm border border-red-200"
+                  title="清除聊天历史"
+                >
+                  <Trash2 size={16} />
+                  <span className="hidden sm:inline">清除历史</span>
+                </button>
+                <button
+                  onClick={clearAllCache}
+                  className="flex items-center gap-2 px-3 py-2 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 transition-all text-sm border border-orange-200"
+                  title="清除所有缓存（包括消息和简历数据）"
+                >
+                  <Wrench size={16} />
+                  <span className="hidden sm:inline">清除缓存</span>
+                </button>
+              </>
             )}
             <button
               onClick={() => setShowResumePanel(!showResumePanel)}
