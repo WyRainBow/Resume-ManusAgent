@@ -444,6 +444,13 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
         """直接调用工具，跳过 LLM 决策"""
         from app.schema import ToolCall
 
+        # 🚨 特殊处理：cv_reader_agent 需要文件路径
+        # 如果 tool_args 为空但有 _current_resume_path，使用它
+        if tool == "cv_reader_agent" and not tool_args.get("file_path"):
+            if self._current_resume_path:
+                tool_args["file_path"] = self._current_resume_path
+                logger.info(f"📄 使用 _current_resume_path: {self._current_resume_path}")
+
         # 构建 ToolCall
         arguments = json.dumps(tool_args) if tool_args else "{}"
         manual_tool_call = ToolCall(

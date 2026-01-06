@@ -154,15 +154,15 @@ function App() {
 
   // 从输入中提取简历路径
   const extractResumePath = (input) => {
-    // 匹配多种格式：
+    // 匹配多种格式，保留开头的 /
     // - "简历/路径" 或 "简历 路径"
     // - "我的简历/路径"
     // - "加载我的简历/路径"
     // - 以 .md 或 .txt 结尾的路径
     const patterns = [
-      /简历(?:[\/\s]+)([^\s]+\.(?:md|txt|MD|TXT))/,  // 简历/路径.md
-      /(?:加载|导入|上传)(?:我的)?简历[\/\s]+([^\s]+\.(?:md|txt|MD|TXT))/,  // 加载我的简历/路径.md
-      /([^\s]+\.(?:md|txt))/  // 任何 .md 或 .txt 文件路径
+      /简历(?:[\/\s]+)(\/[^\s]+\.(?:md|txt|MD|TXT))/,  // 简历//路径.md
+      /(?:加载|导入|上传)(?:我的)?简历[\/\s]+(\/[^\s]+\.(?:md|txt|MD|TXT))/,  // 加载我的简历//路径.md
+      /(\/[^\s]+\.(?:md|txt))/  // 任何 /path/to/file.md 或 /path/to/file.txt
     ];
 
     for (const pattern of patterns) {
