@@ -82,6 +82,7 @@ class AgentStream:
         self._sent_thoughts: set[str] = set()
         self._sent_tools: set[str] = set()
         self._last_answer_content: str = ""
+        self._answer_sent_in_loop: bool = False  # 🚨 跟踪循环中是否已发送过 answer
 
     async def execute(self, user_message: str) -> AsyncIterator[StreamEvent]:
         """Execute agent with streaming events.
@@ -124,6 +125,9 @@ class AgentStream:
             # 同步到 LangChain Memory
             if hasattr(self.agent, '_langchain_memory') and self.agent._langchain_memory:
                 self.agent._langchain_memory.add_user_message(user_message)
+
+            # 重置 answer 发送标志
+            self._answer_sent_in_loop = False
 
             # 根据任务类型动态调整最大步数
             if any(keyword in user_message.lower() for keyword in ["分析", "analyze", "深入", "详细"]):
@@ -215,6 +219,7 @@ class AgentStream:
                                 if is_final_answer:
                                     # 分析结果回复 - 标记为 answer
                                     logger.info(f"[分析结果回复] {msg.content[:200]}...")
+                                    self._answer_sent_in_loop = True  # 🚨 标记已发送 answer
                                     yield AnswerEvent(
                                         content=msg.content,
                                         is_complete=True,
@@ -305,19 +310,8 @@ class AgentStream:
             self.agent.current_step = 0
             self.agent.state = SchemaAgentState.IDLE
 
-            # 检查是否已经在循环中发送过 answer
-            answer_already_sent_in_loop = False
-            has_analysis_tool_result = False
-            for msg in reversed(self.agent.memory.messages[-10:]):
-                if msg.role == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
-                    has_analysis_tool_result = True
-                elif msg.role == "assistant" and msg.content and has_analysis_tool_result:
-                    if not msg.tool_calls or len(msg.tool_calls) == 0:
-                        answer_already_sent_in_loop = True
-                    break
-
             # 只有在循环中没有发送过 answer 的情况下，才发送最终答案
-            if not answer_already_sent_in_loop:
+            if not self._answer_sent_in_loop:
                 final_answer = "任务已完成！"
                 for msg in reversed(self.agent.memory.messages):
                     if msg.role == "assistant" and msg.content:

@@ -83,7 +83,7 @@ class Manus(ToolCallAgent):
         # 初始化对话状态管理器（LLM 会在 base.py 的 initialize_agent 中初始化）
         self._conversation_state = ConversationStateManager(llm=None)
         # 初始化聊天历史管理器
-        self._chat_history = ChatHistoryManager(k=10)
+        self._chat_history = ChatHistoryManager(k=30)  # 滑动窗口：保留最近30条消息
         return self
 
     def _ensure_conversation_state_llm(self):

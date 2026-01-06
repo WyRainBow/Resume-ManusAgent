@@ -158,19 +158,19 @@ class Message(BaseModel):
 
 class Memory(BaseModel):
     messages: List[Message] = Field(default_factory=list)
-    max_messages: int = Field(default=25)  # 从100调整为25，支持20-30轮对话，自动管理Token预算
+    max_messages: int = Field(default=50)  # 滑动窗口：保留最近50条消息
 
     def add_message(self, message: Message) -> None:
         """Add a message to memory"""
         self.messages.append(message)
-        # Optional: Implement message limit
+        # 滑动窗口：保留最近 max_messages 条
         if len(self.messages) > self.max_messages:
             self.messages = self.messages[-self.max_messages :]
 
     def add_messages(self, messages: List[Message]) -> None:
         """Add multiple messages to memory"""
         self.messages.extend(messages)
-        # Optional: Implement message limit
+        # 滑动窗口：保留最近 max_messages 条
         if len(self.messages) > self.max_messages:
             self.messages = self.messages[-self.max_messages :]
 
@@ -223,101 +223,3 @@ class Memory(BaseModel):
     def to_dict_list(self) -> List[dict]:
         """Convert messages to list of dicts"""
         return [msg.to_dict() for msg in self.messages]
-
-
-# ============================================================================
-# LangChain 风格的工具调用上下文处理函数
-# ============================================================================
-
-def fetch_last_ai_and_tool_messages(messages: List[Message]) -> tuple[Optional[Message], List[Message]]:
-    """
-    获取最后的 AI 消息和对应的工具消息。
-
-    复刻 LangChain 的 _fetch_last_ai_and_tool_messages 函数。
-
-    Args:
-        messages: 消息列表
-
-    Returns:
-        tuple: (最后的 AI 消息, 其后的工具消息列表)
-
-    Examples:
-        >>> msgs = [user_msg, ai_msg, tool_msg1, tool_msg2]
-        >>> ai_msg, tool_msgs = fetch_last_ai_and_tool_messages(msgs)
-        >>> # ai_msg 是 ai_msg
-        >>> # tool_msgs 是 [tool_msg1, tool_msg2]
-    """
-    last_ai_message = None
-    last_ai_index = -1
-
-    # 从后往前找最后的 AI 消息
-    for i in range(len(messages) - 1, -1, -1):
-        msg = messages[i]
-        role_val = msg.role if isinstance(msg.role, str) else msg.role.value
-        if role_val == "assistant":
-            last_ai_message = msg
-            last_ai_index = i
-            break
-
-    if last_ai_message is None:
-        return None, []
-
-    # 收集该 AI 消息之后的所有 tool 消息
-    tool_messages = []
-    for msg in messages[last_ai_index + 1:]:
-        role_val = msg.role if isinstance(msg.role, str) else msg.role.value
-        if role_val == "tool":
-            tool_messages.append(msg)
-
-    return last_ai_message, tool_messages
-
-
-def get_pending_tool_calls(messages: List[Message]) -> List[dict]:
-    """
-    获取待处理的工具调用（没有对应 tool 消息的 tool_calls）。
-
-    复刻 LangChain 的 pending_tool_calls 检查逻辑。
-
-    Args:
-        messages: 消息列表
-
-    Returns:
-        List[dict]: 待处理的工具调用列表
-
-    Examples:
-        >>> msgs = [user_msg, ai_msg_with_tool_calls, tool_msg1]
-        >>> pending = get_pending_tool_calls(msgs)
-        >>> # 返回 ai_msg_with_tool_calls 中没有对应 tool 消息的 tool_calls
-    """
-    last_ai_message, tool_messages = fetch_last_ai_and_tool_messages(messages)
-
-    if not last_ai_message or not last_ai_message.tool_calls:
-        return []
-
-    # 收集已执行的 tool_call_id
-    executed_tool_call_ids = set()
-    for msg in tool_messages:
-        if msg.tool_call_id:
-            executed_tool_call_ids.add(msg.tool_call_id)
-
-    # 找出未执行的 tool_calls
-    pending_calls = []
-    for tc in last_ai_message.tool_calls:
-        tc_id = tc.id if hasattr(tc, 'id') else tc.get('id') if isinstance(tc, dict) else None
-        if tc_id and tc_id not in executed_tool_call_ids:
-            pending_calls.append(tc if isinstance(tc, dict) else tc.dict())
-
-    return pending_calls
-
-
-def are_all_tool_calls_completed(messages: List[Message]) -> bool:
-    """
-    检查最后的 AI 消息的所有 tool_calls 是否都有对应的 tool 消息。
-
-    Args:
-        messages: 消息列表
-
-    Returns:
-        bool: 如果所有 tool_calls 都已完成返回 True，否则返回 False
-    """
-    return len(get_pending_tool_calls(messages)) == 0

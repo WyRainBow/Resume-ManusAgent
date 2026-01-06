@@ -16,6 +16,7 @@ from app.memory.langchain.messages.tool import (
     default_tool_parser,
     default_tool_chunk_parser,
 )
+from app.memory.langchain.messages.utils import trim_messages
 
 __all__ = [
     "BaseMessage",
@@ -37,4 +38,5 @@ __all__ = [
     "default_tool_parser",
     "default_tool_chunk_parser",
     "merge_content",
+    "trim_messages",
 ]

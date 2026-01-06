@@ -31,6 +31,7 @@ from app.memory.langchain.messages.utils import (
     messages_to_dict,
     messages_from_dict,
     get_buffer_string,
+    trim_messages,
 )
 from app.memory.langchain.chat_history import (
     BaseChatMessageHistory,
@@ -64,6 +65,7 @@ __all__ = [
     "messages_to_dict",
     "messages_from_dict",
     "get_buffer_string",
+    "trim_messages",
     # Chat history
     "BaseChatMessageHistory",
     "InMemoryChatMessageHistory",

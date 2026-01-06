@@ -124,8 +124,8 @@ class SessionManager:
             client_id=client_id,
         )
 
-        # Create history manager (k=10 for sliding window)
-        history_manager = ChatHistoryManager(k=10)
+        # Create history manager (k=30 for sliding window)
+        history_manager = ChatHistoryManager(k=30)
 
         # Create session
         session = AgentSession(
