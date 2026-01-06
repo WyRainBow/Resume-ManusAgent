@@ -5,7 +5,7 @@ This module provides a unified memory management system inspired by LangChain's
 Memory architecture, adapted for the resume optimization use case.
 
 Components:
-- langchain: Simplified LangChain-style message types and chat history
+- langchain: Complete LangChain-style message types and chat history implementation
 - ChatHistoryManager: Wrapper for managing conversation history
 - ConversationStateManager: Manages conversation state and intent recognition
 - MessageAdapter: Converts between OpenManus and LangChain message formats

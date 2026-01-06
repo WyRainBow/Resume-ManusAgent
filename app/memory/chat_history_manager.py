@@ -7,7 +7,6 @@ Provides OpenManus-compatible interface for managing conversation history.
 from typing import List, Optional
 
 from app.memory.langchain.chat_history import InMemoryChatMessageHistory
-from app.memory.langchain.messages import BaseMessage, AIMessage
 from app.schema import Message
 from app.memory.message_adapter import MessageAdapter
 from app.logger import logger

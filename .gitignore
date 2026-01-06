@@ -61,3 +61,6 @@ tests/
 .cache/
 
 # Docs (keep docs/ folder)
+
+# External repositories
+langchain/

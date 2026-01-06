@@ -2,10 +2,105 @@
 Message Adapter - Convert between OpenManus and LangChain message formats
 """
 
-from typing import List, Optional
+import json
+from typing import List
 
-from app.memory.langchain.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
-from app.schema import Message, Role
+from app.memory.langchain.messages import (
+    BaseMessage,
+    HumanMessage,
+    AIMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from app.schema import Message, Role, ToolCall, Function
+
+
+def _convert_tool_calls_to_langchain_format(tool_calls: List[ToolCall] | None) -> List[dict]:
+    """将 OpenManus ToolCall 对象转换为 LangChain 期望的字典格式
+
+    LangChain AIMessage 期望的 tool_calls 格式:
+    [
+        {
+            "id": "call_xxx",
+            "name": "tool_name",
+            "args": {...}  # 必须是字典
+        }
+    ]
+    """
+    if not tool_calls:
+        return []
+
+    result = []
+    for tc in tool_calls:
+        # tc 是 OpenManus 的 ToolCall 对象，包含 id, type, function
+        args = tc.function.arguments
+
+        # ✅ 如果 args 是 JSON 字符串，解析为字典
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                # 如果解析失败，保持原样或设为空字典
+                args = {}
+
+        tc_dict = {
+            "id": tc.id,
+            "name": tc.function.name,
+            "args": args,  # 确保是字典
+        }
+        result.append(tc_dict)
+    return result
+
+
+def _convert_tool_calls_from_langchain_format(lc_tool_calls: List[dict] | None) -> List[ToolCall]:
+    """将 LangChain 字典格式的 tool_calls 转换为 OpenManus ToolCall 对象
+
+    LangChain tool_calls 格式:
+    [
+        {
+            "id": "call_xxx",
+            "name": "tool_name",
+            "args": {...}  # 字典
+        }
+    ]
+
+    OpenManus ToolCall 格式:
+    [
+        ToolCall(
+            id="call_xxx",
+            type="function",
+            function=Function(
+                name="tool_name",
+                arguments="{...}"  # JSON 字符串
+            )
+        )
+    ]
+    """
+    if not lc_tool_calls:
+        return []
+
+    result = []
+    for tc in lc_tool_calls:
+        # tc 是 LangChain 的字典格式
+        tc_id = tc.get("id", "")
+        tc_name = tc.get("name", "")
+        tc_args = tc.get("args", {})
+
+        # ✅ 如果 args 是字典，转换为 JSON 字符串
+        if isinstance(tc_args, dict):
+            tc_args = json.dumps(tc_args, ensure_ascii=False)
+        elif not isinstance(tc_args, str):
+            tc_args = str(tc_args)
+
+        result.append(ToolCall(
+            id=tc_id,
+            type="function",
+            function=Function(
+                name=tc_name,
+                arguments=tc_args
+            )
+        ))
+    return result
 
 
 class MessageAdapter:
@@ -31,11 +126,13 @@ class MessageAdapter:
         content = message.content or ""
 
         if message.role == Role.USER:
-            return HumanMessage(content=content)
+            return HumanMessage(content=content, id=getattr(message, 'id', None))
         elif message.role == Role.ASSISTANT:
+            # ✅ 将 OpenManus ToolCall 对象转换为 LangChain 期望的字典格式
+            lc_tool_calls = _convert_tool_calls_to_langchain_format(message.tool_calls)
             return AIMessage(
                 content=content,
-                tool_calls=message.tool_calls or []
+                tool_calls=lc_tool_calls
             )
         elif message.role == Role.SYSTEM:
             return SystemMessage(content=content)
@@ -66,10 +163,12 @@ class MessageAdapter:
             return Message(role=role, content=lc_message.content)
         elif isinstance(lc_message, AIMessage):
             role = Role.ASSISTANT
+            # ✅ 将 LangChain 格式的 tool_calls 转换为 OpenManus ToolCall 对象
+            om_tool_calls = _convert_tool_calls_from_langchain_format(lc_message.tool_calls)
             return Message(
                 role=role,
                 content=lc_message.content,
-                tool_calls=lc_message.tool_calls or None
+                tool_calls=om_tool_calls if om_tool_calls else None
             )
         elif isinstance(lc_message, SystemMessage):
             role = Role.SYSTEM

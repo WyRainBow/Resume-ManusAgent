@@ -19,6 +19,28 @@ DEFAULT_RESUME_DIR = Path("app/docs")
 DEFAULT_RESUME_FILE = "韦宇_简历.md"
 
 
+@router.get("/")  # 🔴 添加 /resume 端点，供前端获取简历数据
+async def get_resume_data() -> dict[str, Any]:
+    """Get full resume data for frontend rendering.
+
+    Returns:
+        dict with parsed resume data
+    """
+    from app.utils.resume_parser import parse_markdown_resume
+
+    resume_path = DEFAULT_RESUME_DIR / DEFAULT_RESUME_FILE
+
+    if not resume_path.exists():
+        return {"data": {}}
+
+    try:
+        data = parse_markdown_resume(str(resume_path))
+        return {"data": data}
+    except Exception as e:
+        logger.error(f"Error parsing resume: {e}")
+        return {"data": {}}
+
+
 class ResumeData(BaseModel):
     """Resume data response."""
 

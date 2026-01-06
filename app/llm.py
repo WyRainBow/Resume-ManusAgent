@@ -270,12 +270,12 @@ class LLM:
         """
         Format messages for LLM by converting them to OpenAI message format.
 
-        Note: This system uses SharedMemory (ResumeDataStore) for context passing,
-        not tool messages. Therefore:
-        1. tool role messages are completely excluded from LLM requests
-        2. tool_calls fields are removed from assistant messages
+        ✅ 复刻 LangChain 上下文机制：
+        1. 保留所有 AIMessage（含 tool_calls）
+        2. 保留所有 ToolMessage（通过 tool_call_id 关联）
+        3. LLM 能看到完整的工具调用历史，避免重复调用工具
 
-        This avoids OpenAI API constraint: "tool_calls must be followed by tool messages"
+        OpenAI API 要求: tool_calls 后面必须紧跟对应的 tool 消息（通过 tool_call_id 匹配）
 
         Args:
             messages: List of messages that can be either dict or Message objects
@@ -308,62 +308,48 @@ class LLM:
                 if "role" not in message:
                     raise ValueError("Message dict must contain 'role' field")
 
-                # 跳过 tool 消息 - 上下文通过 SharedMemory 传递
-                if message.get("role") == "tool":
-                    continue
+                # Create a copy to avoid modifying the original
+                message = message.copy()
 
-                # 对于有 tool_calls 的 assistant 消息，移除 tool_calls 字段
-                # 因为没有对应的 tool 消息，会导致 API 验证失败
-                # 注意：不要将工具调用摘要作为内容，这会导致 LLM 重复输出
-                if message.get("role") == "assistant" and message.get("tool_calls"):
-                    message = message.copy()
-                    del message["tool_calls"]
+                # ✅ 保留 tool 消息 - LLM 需要看到工具执行结果
+                # ✅ 保留 assistant 消息的 tool_calls - LLM 需要知道已调用的工具
 
-                    # 如果有实际内容，保留内容
-                    # 如果没有实际内容（只有工具调用），跳过这条消息
-                    existing_content = message.get("content", "")
-                    if not existing_content or not existing_content.strip():
-                        # 跳过只有工具调用没有内容的消息
-                        continue
+                # Remove internal base64_image field (not part of OpenAI API)
+                if "base64_image" in message:
+                    # Process base64 images if present and model supports images
+                    if supports_images and message.get("base64_image"):
+                        # Initialize or convert content to appropriate format
+                        if not message.get("content"):
+                            message["content"] = []
+                        elif isinstance(message["content"], str):
+                            message["content"] = [
+                                {"type": "text", "text": message["content"]}
+                            ]
+                        elif isinstance(message["content"], list):
+                            # Convert string items to proper text objects
+                            message["content"] = [
+                                (
+                                    {"type": "text", "text": item}
+                                    if isinstance(item, str)
+                                    else item
+                                )
+                                for item in message["content"]
+                            ]
 
-                # Process base64 images if present and model supports images
-                if supports_images and message.get("base64_image"):
-                    # Initialize or convert content to appropriate format
-                    if not message.get("content"):
-                        message["content"] = []
-                    elif isinstance(message["content"], str):
-                        message["content"] = [
-                            {"type": "text", "text": message["content"]}
-                        ]
-                    elif isinstance(message["content"], list):
-                        # Convert string items to proper text objects
-                        message["content"] = [
-                            (
-                                {"type": "text", "text": item}
-                                if isinstance(item, str)
-                                else item
-                            )
-                            for item in message["content"]
-                        ]
-
-                    # Add the image to content
-                    message["content"].append(
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{message['base64_image']}"
-                            },
-                        }
-                    )
-
+                        # Add the image to content
+                        message["content"].append(
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{message['base64_image']}"
+                                },
+                            }
+                        )
                     # Remove the base64_image field
                     del message["base64_image"]
-                # If model doesn't support images but message has base64_image, handle gracefully
-                elif not supports_images and message.get("base64_image"):
-                    # Just remove the base64_image field and keep the text content
-                    del message["base64_image"]
 
-                if "content" in message:
+                # Add message if it has content or tool_calls or is a tool message
+                if ("content" in message and message["content"]) or message.get("tool_calls") or message.get("role") == "tool":
                     formatted_messages.append(message)
                 # else: do not include the message
             else:

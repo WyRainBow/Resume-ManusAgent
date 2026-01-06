@@ -108,7 +108,8 @@ class ToolCallEvent(StreamEvent):
     {
       "type": "tool_call",
       "tool": "tool_name",
-      "args": {...}
+      "args": {...},
+      "tool_call_id": "call_xxx"  // ✅ 上下文传递：关联 ToolMessage
     }
     """
 
@@ -117,23 +118,29 @@ class ToolCallEvent(StreamEvent):
         tool_name: str,
         tool_args: dict[str, Any],
         session_id: str | None = None,
+        tool_call_id: str | None = None,  # ✅ 添加 tool_call_id 用于上下文关联
     ):
         super().__init__(
             event_type=EventType.TOOL_CALL,
             data={
                 "tool": tool_name,
                 "args": tool_args,
+                "tool_call_id": tool_call_id,  # ✅ 保存 tool_call_id
             },
             session_id=session_id,
         )
 
     def to_dict(self) -> dict[str, Any]:
         """Override to return frontend-compatible format."""
-        return {
+        result = {
             "type": self.event_type.value,
             "tool": self.data["tool"],
             "args": self.data["args"],
         }
+        # ✅ 只有存在 tool_call_id 时才添加该字段
+        if self.data.get("tool_call_id"):
+            result["tool_call_id"] = self.data["tool_call_id"]
+        return result
 
 
 @dataclass
@@ -144,7 +151,8 @@ class ToolResultEvent(StreamEvent):
     {
       "type": "tool_result",
       "tool": "tool_name",
-      "result": "..."
+      "result": "...",
+      "tool_call_id": "call_xxx"  // ✅ 上下文传递：关联 ToolCall
     }
     """
 
@@ -154,6 +162,7 @@ class ToolResultEvent(StreamEvent):
         result: str,
         is_error: bool = False,
         session_id: str | None = None,
+        tool_call_id: str | None = None,  # ✅ 添加 tool_call_id 用于上下文关联
     ):
         super().__init__(
             event_type=EventType.TOOL_ERROR if is_error else EventType.TOOL_RESULT,
@@ -161,17 +170,22 @@ class ToolResultEvent(StreamEvent):
                 "tool": tool_name,
                 "result": result,
                 "is_error": is_error,
+                "tool_call_id": tool_call_id,  # ✅ 保存 tool_call_id
             },
             session_id=session_id,
         )
 
     def to_dict(self) -> dict[str, Any]:
         """Override to return frontend-compatible format."""
-        return {
+        result = {
             "type": self.event_type.value,
             "tool": self.data["tool"],
             "result": self.data["result"],
         }
+        # ✅ 只有存在 tool_call_id 时才添加该字段
+        if self.data.get("tool_call_id"):
+            result["tool_call_id"] = self.data["tool_call_id"]
+        return result
 
 
 @dataclass

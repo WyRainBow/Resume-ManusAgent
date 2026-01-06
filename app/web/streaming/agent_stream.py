@@ -179,6 +179,7 @@ class AgentStream:
                                 await self._state_machine.transition_to(AgentState.TOOL_EXECUTING)
                                 for tool_call in msg.tool_calls:
                                     tool_name = tool_call.function.name
+                                    tool_call_id = tool_call.id  # ✅ 获取 tool_call_id
 
                                     # 🚨 去重：跳过已调用过的工具
                                     tool_key = f"{tool_name}_{self.agent.current_step}"
@@ -188,11 +189,12 @@ class AgentStream:
                                     self._sent_tools.add(tool_key)
 
                                     tool_args = tool_call.function.arguments
-                                    logger.info(f"[工具调用] {tool_name} | 参数: {str(tool_args)[:100]}...")
+                                    logger.info(f"[工具调用] {tool_name} | ID: {tool_call_id} | 参数: {str(tool_args)[:100]}...")
                                     yield ToolCallEvent(
                                         tool_name=tool_name,
                                         tool_args=tool_args if isinstance(tool_args, (dict, str)) else {},
                                         session_id=self._session_id,
+                                        tool_call_id=tool_call_id,  # ✅ 传递 tool_call_id
                                     )
 
                             # 再处理 content（如果有）
@@ -231,6 +233,7 @@ class AgentStream:
                             await self._state_machine.transition_to(AgentState.TOOL_EXECUTING)
                             for tool_call in msg.tool_calls:
                                 tool_name = tool_call.function.name
+                                tool_call_id = tool_call.id  # ✅ 获取 tool_call_id
                                 tool_key = f"{tool_name}_{self.agent.current_step}"
                                 if tool_key in self._sent_tools:
                                     logger.info(f"[跳过重复工具] {tool_name}")
@@ -238,11 +241,12 @@ class AgentStream:
                                 self._sent_tools.add(tool_key)
 
                                 tool_args = tool_call.function.arguments
-                                logger.info(f"[工具调用] {tool_name} | 参数: {str(tool_args)[:100]}...")
+                                logger.info(f"[工具调用] {tool_name} | ID: {tool_call_id} | 参数: {str(tool_args)[:100]}...")
                                 yield ToolCallEvent(
                                     tool_name=tool_name,
                                     tool_args=tool_args if isinstance(tool_args, (dict, str)) else {},
                                     session_id=self._session_id,
+                                    tool_call_id=tool_call_id,  # ✅ 传递 tool_call_id
                                 )
 
                         elif msg.role == "tool":
@@ -250,6 +254,7 @@ class AgentStream:
                             if self._state_machine.current_state != AgentState.THINKING:
                                 await self._state_machine.transition_to(AgentState.THINKING)
                             content = msg.content
+                            tool_call_id = msg.tool_call_id  # ✅ 获取 tool_call_id
 
                             # 清理前缀
                             if content.startswith("Observed output of cmd `"):
@@ -262,12 +267,13 @@ class AgentStream:
                             if len(content) > 5000:
                                 content = content[:5000] + f"\n...(内容已截断，共{len(msg.content)}字符)"
 
-                            logger.info(f"[工具结果] {msg.name or 'unknown'} | 长度: {len(msg.content)} 字符")
+                            logger.info(f"[工具结果] {msg.name or 'unknown'} | ID: {tool_call_id} | 长度: {len(msg.content)} 字符")
                             yield ToolResultEvent(
                                 tool_name=msg.name or "unknown",
                                 result=content,
                                 is_error=False,
                                 session_id=self._session_id,
+                                tool_call_id=tool_call_id,  # ✅ 传递 tool_call_id
                             )
 
                     # 检查是否陷入循环

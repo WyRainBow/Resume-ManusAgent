@@ -179,40 +179,40 @@ class Memory(BaseModel):
         self.messages.clear()
 
     def cleanup_incomplete_sequences(self) -> None:
-        """清理不完整的消息序列，确保 tool 消息前有对应的 tool_calls"""
+        """
+        清理不完整的消息序列，确保符合 OpenAI API 要求：
+        1. tool_calls 必须有对应的 tool 消息（通过 tool_call_id 匹配）
+        2. tool 消息必须有对应的 tool_calls
+
+        复刻 LangChain 的消息完整性检查逻辑。
+        """
         if not self.messages:
             return
 
+        # 收集所有 tool_call_id 和 tool 消息的 tool_call_id
+        tool_call_ids_from_assistant = set()
+        tool_call_ids_from_tool_msgs = set()
+
+        for msg in self.messages:
+            if msg.role == "assistant" and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if hasattr(tc, 'id'):
+                        tool_call_ids_from_assistant.add(tc.id)
+            elif msg.role == "tool" and msg.tool_call_id:
+                tool_call_ids_from_tool_msgs.add(msg.tool_call_id)
+
+        # 只保留完整的消息对：
+        # - assistant 消息总是保留（即使有未完成的 tool_calls）
+        # - tool 消息只保留有对应 tool_calls 的
         cleaned = []
-        i = 0
-        while i < len(self.messages):
-            msg = self.messages[i]
-
-            # 如果是 tool 消息，检查前一条消息是否有对应的 tool_calls
-            if msg.role == "tool" and msg.tool_call_id:
-                # 检查前一条 assistant 消息是否有对应的 tool_call
-                if i > 0 and self.messages[i-1].role == "assistant":
-                    prev_msg = self.messages[i-1]
-                    if prev_msg.tool_calls:
-                        # 检查是否有匹配的 tool_call_id
-                        has_match = any(
-                            tc.id == msg.tool_call_id
-                            for tc in prev_msg.tool_calls
-                        )
-                        if has_match:
-                            cleaned.append(msg)
-                        # 如果没有匹配，跳过这个 tool 消息（不完整）
-                    else:
-                        # 前一条消息没有 tool_calls，跳过这个 tool 消息
-                        pass
-                else:
-                    # 前一条消息不是 assistant，跳过这个 tool 消息
-                    pass
-            else:
-                # 不是 tool 消息，直接添加
+        for msg in self.messages:
+            if msg.role != "tool":
+                # 非 tool 消息总是保留
                 cleaned.append(msg)
-
-            i += 1
+            elif msg.tool_call_id in tool_call_ids_from_assistant:
+                # tool 消息有对应的 tool_calls，保留
+                cleaned.append(msg)
+            # else: tool 消息没有对应的 tool_calls，跳过（不完整）
 
         self.messages = cleaned
 
@@ -223,3 +223,101 @@ class Memory(BaseModel):
     def to_dict_list(self) -> List[dict]:
         """Convert messages to list of dicts"""
         return [msg.to_dict() for msg in self.messages]
+
+
+# ============================================================================
+# LangChain 风格的工具调用上下文处理函数
+# ============================================================================
+
+def fetch_last_ai_and_tool_messages(messages: List[Message]) -> tuple[Optional[Message], List[Message]]:
+    """
+    获取最后的 AI 消息和对应的工具消息。
+
+    复刻 LangChain 的 _fetch_last_ai_and_tool_messages 函数。
+
+    Args:
+        messages: 消息列表
+
+    Returns:
+        tuple: (最后的 AI 消息, 其后的工具消息列表)
+
+    Examples:
+        >>> msgs = [user_msg, ai_msg, tool_msg1, tool_msg2]
+        >>> ai_msg, tool_msgs = fetch_last_ai_and_tool_messages(msgs)
+        >>> # ai_msg 是 ai_msg
+        >>> # tool_msgs 是 [tool_msg1, tool_msg2]
+    """
+    last_ai_message = None
+    last_ai_index = -1
+
+    # 从后往前找最后的 AI 消息
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        role_val = msg.role if isinstance(msg.role, str) else msg.role.value
+        if role_val == "assistant":
+            last_ai_message = msg
+            last_ai_index = i
+            break
+
+    if last_ai_message is None:
+        return None, []
+
+    # 收集该 AI 消息之后的所有 tool 消息
+    tool_messages = []
+    for msg in messages[last_ai_index + 1:]:
+        role_val = msg.role if isinstance(msg.role, str) else msg.role.value
+        if role_val == "tool":
+            tool_messages.append(msg)
+
+    return last_ai_message, tool_messages
+
+
+def get_pending_tool_calls(messages: List[Message]) -> List[dict]:
+    """
+    获取待处理的工具调用（没有对应 tool 消息的 tool_calls）。
+
+    复刻 LangChain 的 pending_tool_calls 检查逻辑。
+
+    Args:
+        messages: 消息列表
+
+    Returns:
+        List[dict]: 待处理的工具调用列表
+
+    Examples:
+        >>> msgs = [user_msg, ai_msg_with_tool_calls, tool_msg1]
+        >>> pending = get_pending_tool_calls(msgs)
+        >>> # 返回 ai_msg_with_tool_calls 中没有对应 tool 消息的 tool_calls
+    """
+    last_ai_message, tool_messages = fetch_last_ai_and_tool_messages(messages)
+
+    if not last_ai_message or not last_ai_message.tool_calls:
+        return []
+
+    # 收集已执行的 tool_call_id
+    executed_tool_call_ids = set()
+    for msg in tool_messages:
+        if msg.tool_call_id:
+            executed_tool_call_ids.add(msg.tool_call_id)
+
+    # 找出未执行的 tool_calls
+    pending_calls = []
+    for tc in last_ai_message.tool_calls:
+        tc_id = tc.id if hasattr(tc, 'id') else tc.get('id') if isinstance(tc, dict) else None
+        if tc_id and tc_id not in executed_tool_call_ids:
+            pending_calls.append(tc if isinstance(tc, dict) else tc.dict())
+
+    return pending_calls
+
+
+def are_all_tool_calls_completed(messages: List[Message]) -> bool:
+    """
+    检查最后的 AI 消息的所有 tool_calls 是否都有对应的 tool 消息。
+
+    Args:
+        messages: 消息列表
+
+    Returns:
+        bool: 如果所有 tool_calls 都已完成返回 True，否则返回 False
+    """
+    return len(get_pending_tool_calls(messages)) == 0

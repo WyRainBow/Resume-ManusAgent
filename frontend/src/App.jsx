@@ -674,7 +674,7 @@ const MessageItem = ({ message }) => {
     );
   }
 
-  // 工具调用展示 - 增强版
+  // 工具调用展示 - 增强版 + tool_call_id 显示
   if (message.type === 'tool_call') {
     const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
 
@@ -719,8 +719,16 @@ const MessageItem = ({ message }) => {
                 <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
               </div>
             </div>
-            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} className="opacity-60" />
+            <div className="flex items-center gap-2">
+              {/* ✅ 显示 tool_call_id */}
+              {message.tool_call_id && (
+                <span className="text-xs text-gray-500 font-mono bg-white/50 px-2 py-1 rounded-md">
+                  ID: {message.tool_call_id.slice(0, 12)}...
+                </span>
+              )}
+              <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                <ChevronDown size={16} className="opacity-60" />
+              </div>
             </div>
           </div>
 
@@ -729,6 +737,11 @@ const MessageItem = ({ message }) => {
               <div className="flex items-center gap-2 text-gray-400 mb-2 pb-2 border-b border-gray-700">
                 <Terminal size={12} />
                 <span>参数</span>
+                {message.tool_call_id && (
+                  <span className="ml-auto text-xs text-gray-500">
+                    tool_call_id: <span className="text-green-400">{message.tool_call_id}</span>
+                  </span>
+                )}
               </div>
               <pre className="text-green-400">{typeof message.args === 'string'
                 ? (message.args.startsWith('{') || message.args.startsWith('[')
@@ -742,10 +755,14 @@ const MessageItem = ({ message }) => {
     );
   }
 
-  // 工具结果展示 - 增强版
+  // 工具结果展示 - 增强版 + tool_call_id 显示 + 上下文保存状态
   if (message.type === 'tool_result') {
     const isCVTool = message.tool === 'load_resume_data' || message.tool === 'cv_reader_agent' || message.tool === 'cv_editor_agent';
     const isSuccess = message.content && (message.content.includes('✅') || message.content.includes('Successfully') || message.content.includes('成功'));
+
+    // ✅ 判断是否是分析工具结果（需要保存到上下文）
+    const isAnalysisTool = message.tool === 'education_analyzer' || message.tool === 'cv_analyzer_agent';
+    const contextSaved = isAnalysisTool;  // 分析工具的结果会保存到上下文
 
     // 如果是成功状态，显示简洁的成功通知卡片（参考文档中的深色成功通知样式）
     if (isSuccess) {
@@ -762,12 +779,33 @@ const MessageItem = ({ message }) => {
               <CheckCircle2 size={14} className="text-white" />
             </div>
             <span className="text-white text-sm font-medium flex-1">{successText}</span>
-            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} className="text-gray-400" />
+            <div className="flex items-center gap-2">
+              {/* ✅ 显示 tool_call_id */}
+              {message.tool_call_id && (
+                <span className="text-xs text-gray-400 font-mono bg-gray-700 px-2 py-1 rounded-md">
+                  ID: {message.tool_call_id.slice(0, 8)}...
+                </span>
+              )}
+              {/* ✅ 显示上下文保存状态 */}
+              {contextSaved && (
+                <span className="text-xs text-emerald-400 bg-emerald-900/50 px-2 py-1 rounded-md flex items-center gap-1">
+                  <CheckCircle2 size={10} />
+                  已保存上下文
+                </span>
+              )}
+              <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                <ChevronDown size={16} className="text-gray-400" />
+              </div>
             </div>
           </div>
           {isExpanded && (
             <div className="mt-2 bg-white border border-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner max-w-[90%]">
+              <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
+                <span className="text-gray-500">执行结果</span>
+                {message.tool_call_id && (
+                  <span className="text-xs text-gray-400">tool_call_id: {message.tool_call_id}</span>
+                )}
+              </div>
               <pre className="text-gray-600 whitespace-pre-wrap">{message.content}</pre>
             </div>
           )}
@@ -809,13 +847,39 @@ const MessageItem = ({ message }) => {
                 <span className="font-mono text-xs bg-white/70 px-2 py-1 rounded-md border border-white/50">{message.tool}</span>
               </div>
             </div>
-            <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
-              <ChevronDown size={16} className="opacity-60" />
+            <div className="flex items-center gap-2">
+              {/* ✅ 显示 tool_call_id */}
+              {message.tool_call_id && (
+                <span className="text-xs text-gray-500 font-mono bg-white/50 px-2 py-1 rounded-md">
+                  ID: {message.tool_call_id.slice(0, 8)}...
+                </span>
+              )}
+              {/* ✅ 显示上下文保存状态 */}
+              {contextSaved && (
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md flex items-center gap-1">
+                  <CheckCircle2 size={10} />
+                  已保存
+                </span>
+              )}
+              <div className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                <ChevronDown size={16} className="opacity-60" />
+              </div>
             </div>
           </div>
 
           {isExpanded && (
             <div className={`mt-3 bg-white border ${isSuccess ? 'border-green-100' : 'border-blue-100'} p-3 rounded-lg text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto shadow-inner`}>
+              <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
+                <span className="text-gray-500">执行结果</span>
+                <div className="flex items-center gap-2">
+                  {message.tool_call_id && (
+                    <span className="text-xs text-gray-400">tool_call_id: {message.tool_call_id}</span>
+                  )}
+                  {contextSaved && (
+                    <span className="text-xs text-emerald-600">💾 保存到 ChatHistory</span>
+                  )}
+                </div>
+              </div>
               <pre className={isSuccess ? 'text-green-700' : 'text-gray-600 whitespace-pre-wrap'}>{message.content}</pre>
             </div>
           )}

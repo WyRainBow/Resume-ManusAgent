@@ -212,20 +212,21 @@ _global_resume_data = {}
 
 @app.get("/api/resume")
 async def get_resume_data():
-    """获取当前加载的简历数据
+    """获取当前加载的简历数据 - 使用 parse_markdown_resume 解析"""
+    from app.utils.resume_parser import parse_markdown_resume
+    from pathlib import Path
 
-    优先从工具获取，确保数据是最新的
-    """
-    from app.tool.cv_reader_agent_tool import CVReaderAgentTool
+    resume_path = Path("app/docs/韦宇_简历.md")
 
-    # 从工具获取最新数据
-    tool_data = CVReaderAgentTool.get_resume_data()
-    if tool_data and isinstance(tool_data, dict) and tool_data.get("basic"):
-        # 转换为纯字典，移除任何 Pydantic 特殊属性
-        return {"data": _clean_resume_data(tool_data)}
+    if not resume_path.exists():
+        return {"data": {}}
 
-    # 如果工具没有数据，返回全局变量（兜底）
-    return {"data": _global_resume_data}
+    try:
+        data = parse_markdown_resume(str(resume_path))
+        return {"data": data}
+    except Exception as e:
+        logger.error(f"Error parsing resume: {e}")
+        return {"data": {}}
 
 
 def _clean_resume_data(data: dict) -> dict:

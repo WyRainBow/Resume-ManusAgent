@@ -74,7 +74,6 @@ class Manus(ToolCallAgent):
     _last_intent: Intent = PrivateAttr(default=None)
     _last_intent_info: Dict[str, Any] = PrivateAttr(default_factory=dict)
     _current_resume_path: Optional[str] = PrivateAttr(default=None)
-    _last_optimize_step: int = PrivateAttr(default=0)  # 记录上次执行优化的步骤，防止重复
     _just_applied_optimization: bool = PrivateAttr(default=False)  # 标记是否刚应用了优化
 
     @model_validator(mode="after")
@@ -567,42 +566,32 @@ Make the tool call NOW!"""
             # 检查是否要求应用优化
             optimize_keywords = ["优化", "应用", "修改", "edit", "apply", "optimize", "确定"]
             if any(kw in user_lower for kw in optimize_keywords):
-                # 🚨 防止同一步骤中重复调用编辑工具
-                # 检查1: 当前步骤是否已执行优化
-                if self._last_optimize_step == self.current_step:
-                    logger.info(f"⏭️ 当前步骤已执行优化（步骤匹配），跳过")
-                    pass
-                # 检查2: 待执行的工具列表中是否已有 cv_editor_agent（防止同一批次重复）
-                elif self.tool_calls and any(tc.function.name == "cv_editor_agent" for tc in self.tool_calls):
-                    logger.info(f"⏭️ 当前批次已有 cv_editor_agent 待执行，跳过")
-                    pass
-                else:
-                    # 检查之前是否有分析结果
-                    # 🚨 修复：使用 Role 枚举比较，而不是字符串
-                    # 📋 调试：记录最近消息的类型
-                    def get_role_value(msg):
-                        """安全获取 role 值，处理字符串和枚举两种情况"""
-                        if isinstance(msg.role, str):
-                            return msg.role
-                        return msg.role.value if hasattr(msg.role, 'value') else str(msg.role)
+                # 检查之前是否有分析结果
+                # 🚨 修复：使用 Role 枚举比较，而不是字符串
+                # 📋 调试：记录最近消息的类型
+                def get_role_value(msg):
+                    """安全获取 role 值，处理字符串和枚举两种情况"""
+                    if isinstance(msg.role, str):
+                        return msg.role
+                    return msg.role.value if hasattr(msg.role, 'value') else str(msg.role)
 
-                    recent_roles = [(get_role_value(msg), msg.name if get_role_value(msg) == "tool" else None) for msg in self.memory.messages[-10:]]
-                    logger.info(f"🔍 [优化检测] 最近消息角色: {recent_roles}")
+                recent_roles = [(get_role_value(msg), msg.name if get_role_value(msg) == "tool" else None) for msg in self.memory.messages[-10:]]
+                logger.info(f"🔍 [优化检测] 最近消息角色: {recent_roles}")
 
-                    has_recent_analysis = any(
-                        get_role_value(msg) == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']
-                        for msg in self.memory.messages[-10:]
-                    )
-                    has_optimization_suggestion = any(
-                        get_role_value(msg) == "assistant" and msg.content and
-                        any(marker in msg.content for marker in ["优化建议", "最推荐", "before_after", "优化前"])
-                        for msg in self.memory.messages[-15:]  # 🔑 增加窗口，避免调用 cv_editor_agent 后丢失上下文
-                    )
-                    logger.info(f"🔍 [优化检测] has_recent_analysis={has_recent_analysis}, has_optimization_suggestion={has_optimization_suggestion}")
+                has_recent_analysis = any(
+                    get_role_value(msg) == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']
+                    for msg in self.memory.messages[-10:]
+                )
+                has_optimization_suggestion = any(
+                    get_role_value(msg) == "assistant" and msg.content and
+                    any(marker in msg.content for marker in ["优化建议", "最推荐", "before_after", "优化前"])
+                    for msg in self.memory.messages[-15:]  # 🔑 增加窗口，避免调用 cv_editor_agent 后丢失上下文
+                )
+                logger.info(f"🔍 [优化检测] has_recent_analysis={has_recent_analysis}, has_optimization_suggestion={has_optimization_suggestion}")
 
-                    if has_recent_analysis and has_optimization_suggestion:
-                        wants_optimize = True
-                        logger.info(f"📝 用户要求应用优化，将调用编辑工具")
+                if has_recent_analysis and has_optimization_suggestion:
+                    wants_optimize = True
+                    logger.info(f"📝 用户要求应用优化，将调用编辑工具")
 
         # 🚨 如果用户要求应用优化，直接调用 cv_editor_agent
         if wants_optimize:
@@ -642,8 +631,6 @@ Make the tool call NOW!"""
                             suggestion_title = first_suggestion.get("title", "优化建议")
 
                             if edit_path and edit_value:
-                                # 🚨 设置优化步骤标志，防止重复调用
-                                self._last_optimize_step = self.current_step
                                 # 构造工具调用
                                 manual_tool_call = ToolCall(
                                     id="call_apply_optimization",
