@@ -33,6 +33,7 @@ class Intent(str, Enum):
     ANALYZE = "analyze"
     OPTIMIZE = "optimize"
     OPTIMIZE_SECTION = "optimize_section"
+    EDIT = "edit"  # 直接编辑请求，如"把学校改成北京大学"
     ANSWER_QUESTION = "answer_question"
     CONFIRM = "confirm"
     CANCEL = "cancel"
@@ -144,16 +145,18 @@ class ConversationStateManager:
 - analyze: 分析简历（分析、诊断、评估简历等）
 - optimize: 优化简历（整体优化，不指定具体模块）
 - optimize_section: 优化特定模块（如"优化工作经历"、"优化个人总结"、"优化技能"等）
+- edit: 直接编辑修改（如"把学校改成北京大学"、"修改学历"、"将XX改为YY"、"删除XX"等直接的修改指令）
 - answer_question: 回答AI的问题（当AI问了"问题1"、"问题2"、"问题3"后，用户的回答）
 - confirm: 确认（可以、好的、确认、开始、继续等简短确认词）
 - cancel: 取消（取消、不要、算了、停止等）
 - unknown: 其他未知意图
 
 ## 识别规则
-1. **回答识别**：如果最后一条AI消息包含"问题1"、"问题2"、"问题3"，且用户输入是回答（不是新问题），则识别为 answer_question
-2. **模块优化识别**：如果用户说"优化XX"（XX是具体模块名），则识别为 optimize_section
-3. **确认识别**：如果用户输入是简短确认词（1-3个字），且上下文中有待确认的内容，则识别为 confirm
-4. **上下文理解**：必须考虑对话历史，不要只看当前输入
+1. **编辑识别**：如果用户说"把XX改成YY"、"修改XX"、"将XX改为YY"、"删除XX"等直接的修改指令，则识别为 edit
+2. **回答识别**：如果最后一条AI消息包含"问题1"、"问题2"、"问题3"，且用户输入是回答（不是新问题），则识别为 answer_question
+3. **模块优化识别**：如果用户说"优化XX"（XX是具体模块名），则识别为 optimize_section
+4. **确认识别**：如果用户输入是简短确认词（1-3个字），且上下文中有待确认的内容，则识别为 confirm
+5. **上下文理解**：必须考虑对话历史，不要只看当前输入
 
 ## 输出格式（必须是有效的JSON）
 {{
@@ -162,7 +165,10 @@ class ConversationStateManager:
     "extracted_info": {{
         "section": "模块名（如果是optimize_section，如：工作经历、个人总结）",
         "question": "问题编号（如果是answer_question，如：问题1、问题2、问题3）",
-        "answer_type": "回答类型（如果是answer_question：duties/results/technologies）"
+        "answer_type": "回答类型（如果是answer_question：duties/results/technologies）",
+        "field": "字段名（如果是edit，如：school、name、company）",
+        "old_value": "旧值（如果是edit）",
+        "new_value": "新值（如果是edit）"
     }},
     "reasoning": "识别理由（简短，1-2句话）"
 }}
@@ -302,6 +308,7 @@ class ConversationStateManager:
             self.context.state = ConversationState.OPTIMIZING
             self.context.optimization.section = section
             self.context.optimization.started_at = datetime.now()
+        # EDIT 意图不直接路由，走 LLM 流程让 LLM 解析请求后调用工具
         elif intent == Intent.CONFIRM:
             result = self._handle_confirm()
         elif intent == Intent.CANCEL:
@@ -396,6 +403,7 @@ class ConversationStateManager:
             Intent.ANALYZE,
             Intent.OPTIMIZE,
             Intent.OPTIMIZE_SECTION,
+            # Intent.EDIT,  # EDIT 意图走 LLM 流程，让 LLM 解析请求后调用工具
             Intent.ANSWER_QUESTION,
         ]
         return intent in direct_intents
