@@ -796,9 +796,9 @@ const MessageItem = ({ message }) => {
 
     // 如果是成功状态，显示简洁的成功通知卡片（参考文档中的深色成功通知样式）
     if (isSuccess) {
-      const successText = message.content.includes('读取') || message.content.includes('load') ? '读取简历内容执行成功' :
-        message.content.includes('分析') || message.content.includes('analyze') ? '分析简历执行成功' :
-          message.content.includes('编辑') || message.content.includes('edit') ? '编辑简历执行成功' :
+      const successText = message.tool === 'cv_reader_agent' || message.content.includes('读取') || message.content.includes('load') ? '读取简历内容执行成功' :
+        message.tool === 'cv_analyzer_agent' || message.tool === 'education_analyzer' || message.content.includes('分析') || message.content.includes('analyze') ? '分析简历执行成功' :
+          message.tool === 'cv_editor_agent' || message.content.includes('编辑') || message.content.includes('edit') ? '修改简历执行成功' :
             '执行成功';
 
       return (
