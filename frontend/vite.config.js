@@ -12,6 +12,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      // 🔴 后端固定端口 8000，不要修改
       '/ws': {
         target: 'ws://localhost:8000',
         ws: true

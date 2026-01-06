@@ -4,67 +4,24 @@ import ReactMarkdown from 'react-markdown';
 import HTMLTemplateRenderer from './components/HTMLTemplateRenderer';
 import logger from './utils/logger';
 
-// 示例简历数据
-const SAMPLE_RESUME = {
-  id: 'sample-001',
-  title: '前端工程师简历',
+// 空简历模板 - 用户会通过 AI 加载具体简历
+const EMPTY_RESUME = {
+  id: '',
+  title: '我的简历',
   basic: {
-    name: '张三',
-    title: '高级前端工程师',
-    email: 'zhangsan@example.com',
-    phone: '13800138000',
-    location: '北京',
-    employementStatus: '在职，看机会'
+    name: '',
+    title: '',
+    email: '',
+    phone: '',
+    location: '',
+    employementStatus: ''
   },
-  education: [
-    {
-      id: 'edu-1',
-      school: '北京大学',
-      degree: '学士',
-      major: '计算机科学与技术',
-      startDate: '2018-09',
-      endDate: '2022-06',
-      gpa: '3.8/4.0',
-      description: '<p>主修课程：数据结构、算法、计算机网络、操作系统</p>'
-    }
-  ],
-  experience: [
-    {
-      id: 'exp-1',
-      company: '阿里巴巴',
-      position: '前端工程师',
-      date: '2022-07 - 至今',
-      details: '<p>负责淘宝前端页面开发，使用 React 和 TypeScript</p><p>优化页面性能，提升用户体验</p>'
-    }
-  ],
-  projects: [
-    {
-      id: 'proj-1',
-      name: '开源组件库',
-      role: '核心开发者',
-      date: '2023-01 - 2023-12',
-      description: '<p>开发了一套 React 组件库，已在 GitHub 获得 1000+ stars</p>',
-      link: 'https://github.com/example/ui-lib'
-    }
-  ],
-  openSource: [
-    {
-      id: 'os-1',
-      name: 'Vue.js',
-      role: '贡献者',
-      description: '<p>修复了多个 bug，参与了新功能开发</p>',
-      repo: 'https://github.com/vuejs/core'
-    }
-  ],
-  awards: [
-    {
-      id: 'award-1',
-      title: '优秀员工',
-      issuer: '阿里巴巴',
-      date: '2023-12'
-    }
-  ],
-  skillContent: '<p><strong>前端技能：</strong>React, Vue, TypeScript, HTML/CSS</p><p><strong>后端技能：</strong>Node.js, Python</p>',
+  education: [],
+  experience: [],
+  projects: [],
+  openSource: [],
+  awards: [],
+  skillContent: '',
   customData: {},
   menuSections: [
     { id: 'basic', title: '基本信息', icon: '', enabled: true, order: 0 },
@@ -102,17 +59,35 @@ const loadMessagesFromStorage = () => {
   return [];
 };
 
+// 检查是否是旧的示例数据（需要清除缓存）
+const isOldSampleData = (data) => {
+  if (!data || !data.basic) return false;
+  // 检查是否包含旧的示例数据标记
+  return (
+    data.basic.name === '张三' ||
+    data.basic.email === 'zhangsan@example.com' ||
+    data.basic.email === 'zhang.san@example.com'
+  );
+};
+
 // 从 localStorage 加载简历数据
 const loadResumeDataFromStorage = () => {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.RESUME_DATA);
     if (stored) {
-      return JSON.parse(stored);
+      const data = JSON.parse(stored);
+      // 如果是旧的示例数据，清除缓存并返回空简历
+      if (isOldSampleData(data)) {
+        console.log('🧹 检测到旧的示例数据，清除缓存');
+        localStorage.removeItem(STORAGE_KEYS.RESUME_DATA);
+        return EMPTY_RESUME;
+      }
+      return data;
     }
   } catch (e) {
     console.error('Failed to load resume data from storage:', e);
   }
-  return SAMPLE_RESUME;
+  return EMPTY_RESUME;
 };
 
 // 保存消息到 localStorage
@@ -185,7 +160,7 @@ function App() {
   };
 
   const connectWebSocket = () => {
-    // 开发环境下直接连接到后端 WebSocket，避免代理问题
+    // 🔴 后端固定端口 8000，不要修改
     const wsUrl = 'ws://localhost:8000/ws';
 
     console.log("Connecting to", wsUrl);
@@ -422,17 +397,6 @@ function App() {
     }
   };
 
-  const loadSampleResume = () => {
-    setResumeData(SAMPLE_RESUME);
-    setShowResumePanel(true);
-    // 自动发送加载简历的消息
-    const currentWs = wsRef.current || ws;
-    if (currentWs && currentWs.readyState === WebSocket.OPEN) {
-      currentWs.send(JSON.stringify({ prompt: '请帮我加载示例简历' }));
-      setStatus('processing');
-    }
-  };
-
   // 停止 AI 执行
   const handleStop = () => {
     const currentWs = wsRef.current || ws;
@@ -512,13 +476,6 @@ function App() {
                 <span className="hidden sm:inline">清除历史</span>
               </button>
             )}
-            <button
-              onClick={loadSampleResume}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 rounded-lg hover:from-emerald-100 hover:to-teal-100 transition-all text-sm border border-emerald-200"
-            >
-              <FileText size={16} />
-              <span>加载简历</span>
-            </button>
             <button
               onClick={() => setShowResumePanel(!showResumePanel)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${showResumePanel
@@ -632,7 +589,7 @@ function App() {
                   handleSubmit(e);
                 }
               }}
-              placeholder="告诉我您的信息，帮您生成简历...（例如：我叫张三，是一名后端工程师）"
+              placeholder="告诉我您的信息，帮您生成简历...（例如：帮我分析教育经历）"
               className="w-full pl-4 pr-12 py-3 bg-gray-100 border-0 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all resize-none min-h-[56px] max-h-32"
               rows="1"
               disabled={status === 'processing'}

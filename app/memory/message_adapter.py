@@ -4,12 +4,18 @@ Message Adapter - Convert between OpenManus and LangChain message formats
 
 from typing import List, Optional
 
-from app.memory.langchain.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from app.memory.langchain.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from app.schema import Message, Role
 
 
 class MessageAdapter:
-    """Adapter for converting between OpenManus Message and LangChain Message formats."""
+    """Adapter for converting between OpenManus Message and LangChain Message formats.
+
+    Critical: Tool messages are now properly preserved to enable the optimization workflow:
+    - Analysis results (education_analyzer, cv_analyzer_agent) contain optimization_suggestions JSON
+    - These tool results must be preserved across conversation turns
+    - When user says "优化", the agent needs to retrieve previous tool results
+    """
 
     @staticmethod
     def to_langchain(message: Message) -> BaseMessage:
@@ -20,7 +26,7 @@ class MessageAdapter:
             message: OpenManus Message object
 
         Returns:
-            LangChain BaseMessage (HumanMessage, AIMessage, or SystemMessage)
+            LangChain BaseMessage (HumanMessage, AIMessage, SystemMessage, or ToolMessage)
         """
         content = message.content or ""
 
@@ -33,8 +39,15 @@ class MessageAdapter:
             )
         elif message.role == Role.SYSTEM:
             return SystemMessage(content=content)
+        elif message.role == Role.TOOL:
+            # Preserve tool messages with their metadata
+            return ToolMessage(
+                content=content,
+                tool_call_id=message.tool_call_id or "",
+                name=message.name or ""
+            )
         else:
-            # For tool messages, convert to AIMessage
+            # Fallback
             return AIMessage(content=content)
 
     @staticmethod
@@ -46,21 +59,32 @@ class MessageAdapter:
             lc_message: LangChain BaseMessage object
 
         Returns:
-            OpenManus Message object
+            OpenManus Message object with all metadata preserved
         """
         if isinstance(lc_message, HumanMessage):
             role = Role.USER
+            return Message(role=role, content=lc_message.content)
         elif isinstance(lc_message, AIMessage):
             role = Role.ASSISTANT
+            return Message(
+                role=role,
+                content=lc_message.content,
+                tool_calls=lc_message.tool_calls or None
+            )
         elif isinstance(lc_message, SystemMessage):
             role = Role.SYSTEM
+            return Message(role=role, content=lc_message.content)
+        elif isinstance(lc_message, ToolMessage):
+            role = Role.TOOL
+            return Message(
+                role=role,
+                content=lc_message.content,
+                tool_call_id=lc_message.tool_call_id or None,
+                name=lc_message.name or None
+            )
         else:
-            role = Role.ASSISTANT
-
-        return Message(
-            role=role,
-            content=lc_message.content,
-        )
+            # Fallback
+            return Message(role=Role.ASSISTANT, content=lc_message.content)
 
     @staticmethod
     def batch_to_langchain(messages: List[Message]) -> List[BaseMessage]:
