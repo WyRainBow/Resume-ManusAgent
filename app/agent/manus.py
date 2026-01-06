@@ -399,6 +399,26 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
 
         # 🚨 如果意图识别建议直接使用工具，跳过 LLM
         if tool and self._conversation_state.should_use_tool_directly(intent):
+            # 特殊检查：如果简历已加载且意图是 LOAD_RESUME，跳过重复加载
+            if intent == Intent.LOAD_RESUME and self._conversation_state.context.resume_loaded:
+                logger.info("✅ 简历已加载，跳过重复加载")
+                # 生成终止消息，让 LLM 继续处理
+                self.memory.add_message(Message.assistant_message(
+                    "简历已成功加载。您可以告诉我接下来需要做什么，比如「分析简历」或「优化某部分」。"
+                ))
+                from app.schema import ToolCall
+                terminate_call = ToolCall(
+                    id="call_resume_loaded",
+                    function={"name": "terminate", "arguments": "{\"status\": \"success\"}"}
+                )
+                self.tool_calls = [terminate_call]
+                self.memory.add_message(
+                    Message.from_tool_calls(
+                        content="简历加载完成",
+                        tool_calls=[terminate_call]
+                    )
+                )
+                return True
             return await self._handle_direct_tool_call(tool, tool_args, intent)
 
         # 🚨 检查是否需要先加载简历（简历未加载且用户请求分析）
