@@ -205,6 +205,7 @@ class Manus(ToolCallAgent):
         返回: (system_prompt, next_step_prompt)
         """
         logger.info(f"🔍 获取到的用户输入: {user_input[:100] if user_input else '(空)'}")
+
         # 生成简单的上下文描述
         context_parts = []
         if self._conversation_state.context.resume_loaded:
@@ -212,89 +213,70 @@ class Manus(ToolCallAgent):
         else:
             context_parts.append("⚠️ 简历未加载，建议先加载简历")
 
-        # 如果有当前简历路径，添加到上下文
         if self._current_resume_path:
             context_parts.append(f"📄 当前简历文件: {self._current_resume_path}")
-            context_parts.append("💡 当用户说'读取我的简历'或'看看我的简历'时，应该读取这个文件")
-
-        # 如果有正在优化的模块，简单提示
-        if self._conversation_state.context.optimization.section:
-            opt = self._conversation_state.context.optimization
-            context_parts.append(f"正在优化: {opt.section}")
-            if opt.current_question > 0:
-                context_parts.append(f"当前问题: 问题{opt.current_question}")
-
-        # 检查最近的工具调用结果，判断简历是否刚被加载
-        recent_cv_loaded = False
-        for msg in reversed(self.memory.messages[-5:]):
-            if hasattr(msg, 'content') and msg.content:
-                if "CV/Resume Context" in msg.content or "Basic Information" in msg.content:
-                    recent_cv_loaded = True
-                    break
-
-        # 如果最近调用了 cv_reader_agent 并成功，强制更新状态
-        if recent_cv_loaded and not self._conversation_state.context.resume_loaded:
-            self._conversation_state.update_resume_loaded(True)
-            context_parts = ["✅ 简历已加载（刚刚加载成功）"]
-            logger.info("📋 检测到简历已加载，更新状态")
 
         context = "\n".join(context_parts) if context_parts else "初始状态"
 
-        # 生成系统提示词（简化版，包含工具列表）
+        # 生成系统提示词
         system_prompt = SYSTEM_PROMPT.format(
             directory=config.workspace_root,
             context=context
         )
 
-        # 检查用户输入是否包含教育分析请求
-        user_wants_education = False
-        if user_input:
-            user_lower = user_input.lower()
-            if "教育" in user_lower or "学历" in user_lower or "专业" in user_lower:
-                user_wants_education = True
+        # 生成下一步提示词
+        next_step = await self._generate_next_step_prompt()
 
-        # 生成下一步提示词，加入当前状态提示
-        if self._conversation_state.context.resume_loaded:
-            # 检查是否已经调用了分析工具
-            recent_analysis = False
-            for msg in reversed(self.memory.messages[-3:]):
-                if hasattr(msg, 'tool_calls') and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        if tc.function.name in ['education_analyzer', 'cv_analyzer_agent']:
-                            recent_analysis = True
-                            break
-                    if recent_analysis:
+        logger.info(f"💭 提示词已生成，当前状态: {context}")
+        return system_prompt, next_step
+
+    async def _generate_next_step_prompt(self) -> str:
+        """生成下一步提示词（分析结果输出格式）"""
+        # 检查是否有分析工具刚执行完
+        recent_analysis = False
+        analysis_tool_name = None
+
+        for msg in reversed(self.memory.messages[-3:]):
+            if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    if tc.function.name in ['education_analyzer', 'cv_analyzer_agent']:
+                        recent_analysis = True
                         break
+                if recent_analysis:
+                    break
 
-            if recent_analysis:
-                # 分析已完成，检查是否有分析结果返回（检查 tool message）
-                analysis_result_returned = False
-                analysis_tool_name = None
-                for msg in reversed(self.memory.messages[-5:]):
-                    # 检查是否是 tool message（工具返回结果）
-                    if hasattr(msg, 'role') and msg.role == "tool":
-                        if hasattr(msg, 'name') and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
-                            analysis_result_returned = True
-                            analysis_tool_name = msg.name
-                            break
-                    # 也检查 content 中是否包含分析结果的关键字
-                    elif hasattr(msg, 'content') and msg.content:
-                        if "教育经历分析" in msg.content or "优化建议示例" in msg.content or "分析结果" in msg.content:
-                            analysis_result_returned = True
-                            if "教育" in msg.content:
-                                analysis_tool_name = "education_analyzer"
-                            break
+        if not recent_analysis:
+            return NEXT_STEP_PROMPT
 
-                if analysis_result_returned:
-                    # 分析结果已返回，获取分析结果内容
-                    analysis_content = ""
-                    for msg in reversed(self.memory.messages[-10:]):
-                        if msg.role == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
-                            analysis_content = msg.content[:5000]  # 限制长度，但要包含优化建议
-                            break
+        # 检查分析结果是否已返回
+        analysis_result_returned = False
+        for msg in reversed(self.memory.messages[-5:]):
+            if hasattr(msg, 'role') and msg.role == "tool":
+                if hasattr(msg, 'name') and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
+                    analysis_result_returned = True
+                    analysis_tool_name = msg.name
+                    break
+            elif hasattr(msg, 'content') and msg.content:
+                if "教育经历分析" in msg.content or "优化建议示例" in msg.content:
+                    analysis_result_returned = True
+                    if "教育" in msg.content:
+                        analysis_tool_name = "education_analyzer"
+                    else:
+                        analysis_tool_name = "cv_analyzer_agent"
+                    break
 
-                    tool_display_name = "教育经历" if analysis_tool_name == "education_analyzer" else "简历"
-                    next_step = f"""## 🚨🚨🚨 CRITICAL: ANALYSIS COMPLETED! OUTPUT RESULTS NOW! 🚨🚨🚨
+        if not analysis_result_returned:
+            return NEXT_STEP_PROMPT
+
+        # 获取分析结果内容
+        analysis_content = ""
+        for msg in reversed(self.memory.messages[-10:]):
+            if msg.role == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
+                analysis_content = msg.content[:5000]
+                break
+
+        tool_display_name = "教育经历" if analysis_tool_name == "education_analyzer" else "简历"
+        return f"""## 🚨🚨🚨 CRITICAL: ANALYSIS COMPLETED! OUTPUT RESULTS NOW! 🚨🚨🚨
 
 ✅ **ACTION: Output text ONLY, then call terminate()** ✅
 
@@ -334,96 +316,6 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
 1. This step = OUTPUT TEXT to user
 2. After outputting text, call terminate()
 3. Next step (after user replies "优化") = Call cv_editor_agent()"""
-            else:
-                # 简历已加载，提示 LLM 进行分析
-                # user_wants_education 已在上面计算
-                user_wants_full_analysis = False
-                if user_input and not user_wants_education:
-                    user_lower = user_input.lower()
-                    if "简历" in user_lower and "分析" in user_lower:
-                        user_wants_full_analysis = True
-
-                if user_wants_education:
-                    # 检查是否已经调用了 education_analyzer
-                    already_called_education_analyzer = False
-                    for msg in reversed(self.memory.messages[-10:]):
-                        if msg.role == "tool" and msg.name == "education_analyzer":
-                            already_called_education_analyzer = True
-                            break
-                        elif hasattr(msg, 'tool_calls') and msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                if tc.function.name == "education_analyzer":
-                                    already_called_education_analyzer = True
-                                    break
-                            if already_called_education_analyzer:
-                                break
-
-                    if not already_called_education_analyzer:
-                        next_step = f"""## 🚨🚨🚨 CRITICAL: USER WANTS EDUCATION ANALYSIS! 🚨🚨🚨
-
-**CURRENT STATE**: ✅ Resume is LOADED!
-
-**USER'S CURRENT REQUEST**: "{user_input}"
-
-**YOUR ACTION**: Call education_analyzer() NOW!
-
-✅ FOLLOW THESE STEPS:
-- Call education_analyzer() with empty arguments: {{}}
-- Wait for the tool result
-- Then output the analysis results
-
-✅ REMEMBER:
-- Resume is already loaded, proceed directly to analysis
-- User request is analysis, not optimization (user said "{user_input}")
-- Focus on tool call first, output comes after
-
-Make the tool call NOW!"""
-                    else:
-                        # 已经调用了，使用分析结果返回的逻辑
-                        next_step = f"""## ANALYSIS COMPLETED - OUTPUT RESULTS NOW!
-
-The education_analyzer() has been called. Output the analysis results to the user.
-
-Output text only, then call terminate()."""
-                elif user_wants_full_analysis:
-                    next_step = f"""## CURRENT STATE: ✅ Resume is LOADED!
-
-Resume is ready, proceed with analysis.
-
-**USER REQUEST DETECTED: 分析简历**
-
-⚡ YOUR NEXT ACTION: Call cv_analyzer_agent() NOW!
-
-{NEXT_STEP_PROMPT}"""
-                else:
-                    next_step = f"""## CURRENT STATE: ✅ Resume is LOADED!
-
-Resume is ready, proceed with analysis based on user's request:
-- If user mentioned education/学历/专业 → Call education_analyzer() NOW
-- If user mentioned resume analysis → Call cv_analyzer_agent() NOW
-
-{NEXT_STEP_PROMPT}"""
-        else:
-            # 简历未加载
-            if user_wants_education and self._current_resume_path:
-                next_step = f"""## 🚨 USER WANTS EDUCATION ANALYSIS - LOAD RESUME FIRST! 🚨
-
-**CURRENT STATE**: ⚠️ Resume NOT loaded yet
-
-**USER'S REQUEST**: "{user_input}"
-**RESUME PATH**: {self._current_resume_path}
-
-**YOUR ACTION**: Call cv_reader_agent(file_path="{self._current_resume_path}") NOW!
-
-After the resume is loaded, you will call education_analyzer() in the next step.
-
-Make the tool call NOW!"""
-            else:
-                next_step = NEXT_STEP_PROMPT
-
-        logger.info(f"💭 提示词已生成，当前状态: {context}")
-
-        return system_prompt, next_step
 
     def _generate_intent_hint(self, result: Dict[str, Any]) -> str:
         """根据意图识别结果生成提示"""
@@ -474,7 +366,7 @@ Make the tool call NOW!"""
         return "\n".join(hints)
 
     async def think(self) -> bool:
-        """Process current state and decide next actions with intelligent context management."""
+        """Process current state and decide next actions using LLM intent recognition."""
         if not self._initialized:
             await self.initialize_mcp_servers()
             self._initialized = True
@@ -485,12 +377,22 @@ Make the tool call NOW!"""
         # 获取最后的用户输入
         user_input = self._get_last_user_input()
 
+        # 🧠 使用 LLM 意图识别（替换规则判断）
+        intent_result = await self._conversation_state.process_input(
+            user_input=user_input,
+            conversation_history=self.memory.messages[-5:],
+            last_ai_message=self._get_last_ai_message()
+        )
+
+        intent = intent_result["intent"]
+        tool = intent_result.get("tool")
+        tool_args = intent_result.get("tool_args", {})
+
+        logger.info(f"🧠 意图识别: {intent.value}, 建议工具: {tool}")
+
         # 🔑 特殊处理：检查是否刚应用了优化，如果是则终止
         if getattr(self, '_just_applied_optimization', False):
-            # 清除标志
             self._just_applied_optimization = False
-
-            # 检查最近是否有 cv_editor_agent 调用成功
             recent_messages = self.memory.messages[-5:]
             has_editor_success = any(
                 msg.role == "tool" and msg.name == "cv_editor_agent" and "Successfully updated" in (msg.content or "")
@@ -499,11 +401,9 @@ Make the tool call NOW!"""
 
             if has_editor_success:
                 logger.info("✅ 优化已应用完成，终止执行")
-                # 添加终止消息
                 self.memory.add_message(Message.assistant_message(
                     "✅ 优化已应用！如果需要继续优化其他项目，请告诉我。"
                 ))
-                # 调用 terminate 工具
                 from app.schema import ToolCall
                 terminate_call = ToolCall(
                     id="call_terminate",
@@ -518,153 +418,26 @@ Make the tool call NOW!"""
                 )
                 return True
 
-        # 🚨 特殊处理：检查是否需要先加载简历
-        need_resume_first = False
-        if user_input:
-            user_lower = user_input.lower()
-            # 检查是否请求分析教育/简历
-            wants_analysis = any(kw in user_lower for kw in [
-                "分析", "analyze", "教育", "学历", "专业", "education", "degree"
-            ])
+        # 🚨 如果意图识别建议直接使用工具，跳过 LLM
+        if tool and self._conversation_state.should_use_tool_directly(intent):
+            return await self._handle_direct_tool_call(tool, tool_args, intent)
 
-            # 检查简历是否已加载
-            if wants_analysis and not self._conversation_state.context.resume_loaded:
-                # 检查是否有默认简历文件
-                import os
-                default_resume = "app/docs/韦宇_简历.md"
-                if os.path.exists(default_resume):
-                    need_resume_first = True
-                    logger.info(f"📋 需要先加载简历: {default_resume}")
+        # 🚨 检查是否需要先加载简历（简历未加载且用户请求分析）
+        if not self._conversation_state.context.resume_loaded:
+            import os
+            default_resume = "app/docs/韦宇_简历.md"
+            if os.path.exists(default_resume):
+                # 用户请求分析但简历未加载，先加载
+                if intent in [Intent.ANALYZE, Intent.OPTIMIZE, Intent.OPTIMIZE_SECTION]:
+                    return await self._handle_direct_tool_call("cv_reader_agent", {
+                        "file_path": os.path.abspath(default_resume)
+                    }, intent)
 
-        # 🚨 如果需要先加载简历，直接调用 cv_reader_agent
-        if need_resume_first:
-            from app.schema import ToolCall
-            resume_path = os.path.abspath("app/docs/韦宇_简历.md")
+        # 🚨 处理应用优化意图（确认后应用编辑）
+        if intent == Intent.CONFIRM:
+            return await self._handle_optimize_confirm()
 
-            manual_tool_call = ToolCall(
-                id="call_load_resume",
-                function={
-                    "name": "cv_reader_agent",
-                    "arguments": json.dumps({"file_path": resume_path})
-                }
-            )
-            self.tool_calls = [manual_tool_call]
-            # 添加 assistant 消息
-            self.memory.add_message(
-                Message.from_tool_calls(
-                    content=f"我将先加载您的简历数据，文件路径：{resume_path}",
-                    tool_calls=[manual_tool_call]
-                )
-            )
-            logger.info(f"🔧 强制调用 cv_reader_agent 加载简历")
-            return True
-
-        # 🚨 特殊处理：检查用户是否要求应用优化（编辑简历）
-        wants_optimize = False
-        if user_input:
-            user_lower = user_input.lower()
-            # 检查是否要求应用优化
-            optimize_keywords = ["优化", "应用", "修改", "edit", "apply", "optimize", "确定"]
-            if any(kw in user_lower for kw in optimize_keywords):
-                # 检查之前是否有分析结果
-                # 🚨 修复：使用 Role 枚举比较，而不是字符串
-                # 📋 调试：记录最近消息的类型
-                def get_role_value(msg):
-                    """安全获取 role 值，处理字符串和枚举两种情况"""
-                    if isinstance(msg.role, str):
-                        return msg.role
-                    return msg.role.value if hasattr(msg.role, 'value') else str(msg.role)
-
-                recent_roles = [(get_role_value(msg), msg.name if get_role_value(msg) == "tool" else None) for msg in self.memory.messages[-10:]]
-                logger.info(f"🔍 [优化检测] 最近消息角色: {recent_roles}")
-
-                has_recent_analysis = any(
-                    get_role_value(msg) == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']
-                    for msg in self.memory.messages[-10:]
-                )
-                has_optimization_suggestion = any(
-                    get_role_value(msg) == "assistant" and msg.content and
-                    any(marker in msg.content for marker in ["优化建议", "最推荐", "before_after", "优化前"])
-                    for msg in self.memory.messages[-15:]  # 🔑 增加窗口，避免调用 cv_editor_agent 后丢失上下文
-                )
-                logger.info(f"🔍 [优化检测] has_recent_analysis={has_recent_analysis}, has_optimization_suggestion={has_optimization_suggestion}")
-
-                if has_recent_analysis and has_optimization_suggestion:
-                    wants_optimize = True
-                    logger.info(f"📝 用户要求应用优化，将调用编辑工具")
-
-        # 🚨 如果用户要求应用优化，直接调用 cv_editor_agent
-        if wants_optimize:
-            from app.schema import ToolCall
-            import re
-
-            # 从之前的分析结果中提取最推荐的优化
-            # 查找类似 "path": "education[0].gpa" 的模式
-            edit_path = None
-            edit_value = None
-            suggestion_title = None
-
-            # 尝试从最近的工具结果中提取 JSON 建议数据
-            for msg in reversed(self.memory.messages[-10:]):
-                role_val = msg.role if isinstance(msg.role, str) else msg.role.value
-                if role_val == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
-                    content = msg.content
-                    # 尝试解析 JSON 结果
-                    try:
-                        # 提取 JSON 部分（在 ```json 和 ``` 之间）
-                        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
-                        if json_match:
-                            json_str = json_match.group(1)
-                        else:
-                            # 尝试直接解析整个内容
-                            json_str = content
-
-                        data = json.loads(json_str)
-
-                        # 查找优化建议（支持两种格式）
-                        suggestions = data.get("optimization_suggestions") or data.get("optimizationSuggestions", [])
-                        if suggestions and len(suggestions) > 0:
-                            # 使用第一个建议（最推荐的）
-                            first_suggestion = suggestions[0]
-                            edit_path = first_suggestion.get("apply_path")
-                            edit_value = first_suggestion.get("optimized")
-                            suggestion_title = first_suggestion.get("title", "优化建议")
-
-                            if edit_path and edit_value:
-                                # 构造工具调用
-                                manual_tool_call = ToolCall(
-                                    id="call_apply_optimization",
-                                    function={
-                                        "name": "cv_editor_agent",
-                                        "arguments": json.dumps({
-                                            "path": edit_path,
-                                            "action": "update",
-                                            "value": edit_value
-                                        })
-                                    }
-                                )
-                                self.tool_calls = [manual_tool_call]
-                                self.memory.add_message(
-                                    Message.from_tool_calls(
-                                        content=f"✅ 正在应用优化：{suggestion_title}\n路径：{edit_path}\n新值：{edit_value}",
-                                        tool_calls=[manual_tool_call]
-                                    )
-                                )
-                                logger.info(f"🔧 强制调用 cv_editor_agent 应用优化: {edit_path} = {edit_value}")
-
-                                # 🔑 设置标志，表示刚应用了优化，下一步应该终止
-                                self._just_applied_optimization = True
-                                return True
-                    except (json.JSONDecodeError, KeyError) as e:
-                        logger.debug(f"解析优化建议失败: {e}")
-                        continue
-
-            # 如果无法解析 JSON，让 LLM 正常处理
-            logger.info("📝 无法自动解析优化建议，让 LLM 处理编辑请求")
-            # 不返回 True，让代码继续到正常的 LLM 流程
-            return False
-
-        # 动态生成提示词（异步）
+        # 动态生成提示词
         self.system_prompt, self.next_step_prompt = await self._generate_dynamic_prompts(user_input)
 
         # 检查是否需要浏览器上下文
@@ -681,43 +454,113 @@ Make the tool call NOW!"""
             self.next_step_prompt = f"{self.next_step_prompt}\n\n{browser_prompt}"
 
         # 调用父类的 think 方法
-        result = await super().think()
+        return await super().think()
 
-        # 🚨 特殊处理：如果明确要求调用工具但 LLM 没有调用，强制调用
-        if not self.tool_calls and user_input:
-            user_lower = user_input.lower()
-            # 检查是否应该调用 education_analyzer
-            should_call_education = (
-                "教育" in user_lower or "学历" in user_lower or "education" in user_lower
-            ) and self._conversation_state.context.resume_loaded
+    async def _handle_direct_tool_call(
+        self,
+        tool: str,
+        tool_args: dict,
+        intent: "Intent"
+    ) -> bool:
+        """直接调用工具，跳过 LLM 决策"""
+        from app.schema import ToolCall
 
-            # 检查是否已经调用过
-            already_called = any(
-                msg.role == "tool" and msg.name == "education_analyzer"
-                for msg in self.memory.messages[-10:]
+        # 构建 ToolCall
+        arguments = json.dumps(tool_args) if tool_args else "{}"
+        manual_tool_call = ToolCall(
+            id=f"call_{tool}",
+            function={
+                "name": tool,
+                "arguments": arguments
+            }
+        )
+        self.tool_calls = [manual_tool_call]
+
+        # 生成说明文本
+        descriptions = {
+            "cv_reader_agent": "我将先加载您的简历数据",
+            "cv_analyzer_agent": "我将分析您的简历",
+            "cv_editor_agent": "我将编辑您的简历",
+            "education_analyzer": "我将分析您的教育背景",
+        }
+
+        content = descriptions.get(tool, f"我将调用 {tool} 工具")
+        if tool_args.get("section"):
+            content += f"，重点优化：{tool_args['section']}"
+
+        # 添加 assistant 消息
+        self.memory.add_message(
+            Message.from_tool_calls(
+                content=content,
+                tool_calls=[manual_tool_call]
             )
+        )
 
-            if should_call_education and not already_called:
-                logger.warning("🔧 LLM 没有调用 education_analyzer，强制调用")
-                # 创建手动工具调用
-                manual_tool_call = ToolCall(
-                    id="call_manual_education",
-                    function={
-                        "name": "education_analyzer",
-                        "arguments": "{}"
-                    }
-                )
-                self.tool_calls = [manual_tool_call]
-                # 添加 assistant 消息标记工具调用
-                self.memory.add_message(
-                    Message.from_tool_calls(
-                        content="我将调用教育分析工具来分析您的教育背景。",
-                        tool_calls=[manual_tool_call]
-                    )
-                )
-                result = True  # 返回 True 表示应该执行 act()
+        logger.info(f"🔧 直接调用工具: {tool}, 参数: {tool_args}")
+        return True
 
-        return result
+    async def _handle_optimize_confirm(self) -> bool:
+        """处理用户确认优化意图"""
+        from app.schema import ToolCall
+        import re
+
+        # 从之前的分析结果中提取最推荐的优化
+        edit_path = None
+        edit_value = None
+        suggestion_title = None
+
+        for msg in reversed(self.memory.messages[-10:]):
+            role_val = msg.role if isinstance(msg.role, str) else msg.role.value
+            if role_val == "tool" and msg.name in ['education_analyzer', 'cv_analyzer_agent']:
+                content = msg.content
+                try:
+                    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+                    json_str = json_match.group(1) if json_match else content
+
+                    data = json.loads(json_str)
+                    suggestions = data.get("optimization_suggestions") or data.get("optimizationSuggestions", [])
+
+                    if suggestions and len(suggestions) > 0:
+                        first_suggestion = suggestions[0]
+                        edit_path = first_suggestion.get("apply_path")
+                        edit_value = first_suggestion.get("optimized")
+                        suggestion_title = first_suggestion.get("title", "优化建议")
+
+                        if edit_path and edit_value:
+                            manual_tool_call = ToolCall(
+                                id="call_apply_optimization",
+                                function={
+                                    "name": "cv_editor_agent",
+                                    "arguments": json.dumps({
+                                        "path": edit_path,
+                                        "action": "update",
+                                        "value": edit_value
+                                    })
+                                }
+                            )
+                            self.tool_calls = [manual_tool_call]
+                            self.memory.add_message(
+                                Message.from_tool_calls(
+                                    content=f"✅ 正在应用优化：{suggestion_title}\n路径：{edit_path}",
+                                    tool_calls=[manual_tool_call]
+                                )
+                            )
+                            logger.info(f"🔧 应用优化: {edit_path} = {edit_value}")
+                            self._just_applied_optimization = True
+                            return True
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.debug(f"解析优化建议失败: {e}")
+                    continue
+
+        # 无法解析 JSON，让 LLM 处理
+        return False
+
+    def _get_last_ai_message(self) -> Optional[str]:
+        """获取最后一条 AI 消息内容"""
+        for msg in reversed(self.memory.messages[-3:]):
+            if msg.role == Role.ASSISTANT and msg.content:
+                return msg.content[:500]
+        return None
 
     async def act(self) -> str:
         """Execute tool calls and update conversation state."""
