@@ -275,6 +275,12 @@ class ConversationStateManager:
         if intent == Intent.GREETING:
             result["tool"] = None
             self.context.state = ConversationState.GREETING
+        elif intent == Intent.LOAD_RESUME:
+            # 加载简历 → 调用 cv_reader_agent
+            result["tool"] = "cv_reader_agent"
+            # 如果 extracted_info 中有文件路径，使用它
+            if info.get("file_path"):
+                result["tool_args"] = {"file_path": info["file_path"]}
         elif intent == Intent.VIEW_RESUME:
             result["tool"] = "cv_reader_agent"
         elif intent == Intent.ANALYZE:
@@ -385,6 +391,7 @@ class ConversationStateManager:
     def should_use_tool_directly(self, intent: Intent) -> bool:
         """判断是否应该直接使用工具"""
         direct_intents = [
+            Intent.LOAD_RESUME,
             Intent.VIEW_RESUME,
             Intent.ANALYZE,
             Intent.OPTIMIZE,

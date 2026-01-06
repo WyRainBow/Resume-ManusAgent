@@ -1,6 +1,6 @@
 # 复刻 LangChain 上下文机制
 
-**文档版本**: 1.0
+**文档版本**: 1.1
 **创建日期**: 2026-01-XX
 **最后更新**: 2026-01-XX
 
@@ -212,6 +212,27 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 | `messages_to_dict()` | 消息列表 → 字典列表 | 批量序列化 |
 | `messages_from_dict()` | 字典列表 → 消息列表 | 反序列化 |
 | `get_buffer_string()` | 消息列表 → 格式化字符串 | 用于 LLM 提示 |
+| `trim_messages()` | 修剪消息列表 | 滑动窗口实现 |
+
+#### 4.1 trim_messages - 滑动窗口实现
+
+**功能**: LangChain 兼容的消息修剪函数，实现滑动窗口机制
+
+**参数**:
+- `max_messages`: 最大消息数量
+- `strategy`: 修剪策略
+  - `"last"`: 保留最后 N 条消息（默认，滑动窗口）
+  - `"first"`: 保留前 N 条消息
+- `include_system`: 是否保留 SystemMessage（不计入 max_messages）
+- `start_on`: 指定从哪种消息类型开始（仅 strategy="last" 时有效）
+
+**行为**:
+- 当 `strategy="last"` 时，保留最近的 N 条消息，删除旧消息
+- 如果 `include_system=True`，SystemMessage 会被保留在索引 0，不计入 max_messages
+- 如果指定 `start_on`，会从第一个匹配的消息类型开始保留
+- 当 `strategy="first"` 时，保留前 N 条消息
+
+**用途**: 控制上下文长度，防止内存无限增长，实现 LangChain 风格的滑动窗口
 
 ### 5. MessageAdapter (`app/memory/message_adapter.py`)
 
@@ -234,17 +255,28 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 **职责**: 提供 OpenManus 兼容的接口，封装 LangChain 实现
 
 **功能**:
-- 滑动窗口：默认保留最后 10 轮对话
-- 消息格式转换：自动处理 OpenManus ↔ LangChain 转换
-- 上下文检索：`get_recent_context()` 用于格式化上下文字符串
+- **滑动窗口**: 自动修剪消息，防止内存无限增长
+  - 通过 `k` 参数设置最大消息数量（默认 10）
+  - 每次添加消息后自动检查并修剪超出限制的消息
+  - 使用 `trim_messages` 实现，与 LangChain 行为一致
+  - 支持 `include_system` 参数保留 SystemMessage
+- **消息格式转换**: 自动处理 OpenManus ↔ LangChain 转换
+- **上下文检索**: `get_recent_context()` 用于格式化上下文字符串
 
 **关键方法**:
-- `add_message()`: 添加消息
-- `add_messages()`: 批量添加消息
-- `get_messages()`: 获取消息（支持窗口大小）
+- `add_message()`: 添加消息（自动修剪）
+- `add_messages()`: 批量添加消息（自动修剪）
+- `get_messages()`: 获取消息（支持 max_messages 参数）
 - `get_recent_context()`: 获取格式化的上下文字符串
 - `clear()`: 清空历史
 - `message_count`: 属性，获取消息数量
+
+**滑动窗口机制**:
+- 初始化时通过 `k` 参数设置最大消息数
+- 每次 `add_message()` 或 `add_messages()` 后，自动调用 `_trim_history()`
+- `_trim_history()` 使用 `trim_messages` 修剪消息，保留最后 k 条
+- SystemMessage 可通过 `include_system=True` 保留，不计入 k 限制
+- `get_messages(max_messages=N)` 也使用 `trim_messages` 进行一致的修剪
 
 ---
 
@@ -298,7 +330,7 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 | merge_content() | ✅ | ✅ | 完全实现 |
 | **高级功能** |
 | filter_messages() | ✅ | ❌ | 未实现（可选） |
-| trim_messages() | ✅ | ❌ | 未实现（可选） |
+| trim_messages() | ✅ | ✅ | 完全实现（滑动窗口） |
 | merge_message_runs() | ✅ | ❌ | 未实现（可选） |
 | convert_to_messages() | ✅ | ❌ | 未实现（可选） |
 | convert_to_openai_messages() | ✅ | ❌ | 未实现（可选） |
@@ -319,6 +351,7 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 4. **ChatHistory**: 内存实现的完整功能
 5. **序列化**: 消息的序列化和反序列化
 6. **异步支持**: 所有异步方法
+7. **滑动窗口**: `trim_messages` 函数和 `ChatHistoryManager` 自动修剪机制
 
 #### ⚠️ 部分实现的功能
 
@@ -332,10 +365,11 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 
 1. **高级工具函数**:
    - `filter_messages()`: 按类型/ID/名称过滤消息
-   - `trim_messages()`: 基于 token 计数修剪消息
    - `merge_message_runs()`: 合并连续的同类型消息
    - `convert_to_messages()`: 从多种格式转换为消息
    - `convert_to_openai_messages()`: 转换为 OpenAI 格式
+
+**注意**: `trim_messages` 已实现，但当前实现基于消息数量而非 token 计数。LangChain 的完整版本支持基于 token 的修剪，但当前实现已满足滑动窗口需求。
 
 2. **持久化存储**:
    - `FileChatMessageHistory`: 文件存储
@@ -356,18 +390,19 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 - ✅ 序列化/反序列化
 - ✅ 异步支持
 
-### 高级功能完整性: 0%
+### 高级功能完整性: 20%
 
-高级功能未实现，但这些都是可选功能：
-- ❌ 消息过滤和修剪
+部分高级功能已实现：
+- ✅ 消息修剪（滑动窗口）- 基于消息数量
+- ❌ 消息过滤
 - ❌ 消息格式转换工具
 - ❌ 持久化存储
 
 ### 总体评估
 
 **核心功能**: ✅ **完全复刻** (100%)
-**高级功能**: ⚠️ **未实现** (0%，但为可选功能)
-**总体**: ✅ **核心功能完全复刻，满足项目需求**
+**高级功能**: ✅ **部分实现** (20%，滑动窗口已实现)
+**总体**: ✅ **核心功能完全复刻，滑动窗口已实现，满足项目需求**
 
 ### 设计决策
 
@@ -376,9 +411,15 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
    - 简化实现，减少依赖
    - 性能更好
 
-2. **未实现高级功能**: 这些功能在 LangChain 中也是高级特性：
-   - 项目当前不需要消息过滤/修剪
-   - 可通过现有 API 实现类似功能
+2. **滑动窗口实现**: 已实现 LangChain 兼容的滑动窗口机制：
+   - `trim_messages` 函数支持基于消息数量的修剪
+   - `ChatHistoryManager` 自动修剪，防止内存无限增长
+   - 支持保留 SystemMessage，符合 LangChain 行为
+   - 当前实现基于消息数量，而非 token 计数（满足 MVP 需求）
+
+3. **未实现高级功能**: 这些功能在 LangChain 中也是高级特性：
+   - 消息过滤（filter_messages）可通过现有 API 实现
+   - 消息合并（merge_message_runs）当前不需要
    - 需要时可按需添加
 
 ---
@@ -392,6 +433,7 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
    - 完整的 ToolCall 系统
    - ChatHistory 的完整实现
    - 序列化/反序列化支持
+   - 滑动窗口机制（trim_messages + 自动修剪）
 
 2. ✅ **针对项目优化**
    - 内存存储，适合单会话
@@ -406,7 +448,8 @@ Chunk 支持 `__add__` 操作，可以合并多个 chunk。
 ### 与 LangChain 的关系
 
 - **核心功能**: 100% 复刻
-- **高级功能**: 未实现（可选）
+- **滑动窗口**: 已实现（基于消息数量）
+- **高级功能**: 部分实现（消息过滤等未实现，可选）
 - **存储方式**: 内存存储（而非持久化）
 
 ### 结论
@@ -418,6 +461,7 @@ OpenManus 的上下文机制**完全复刻了 LangChain 的核心功能**，所�
 - ✅ 工具调用和结果传递
 - ✅ 上下文跨连接恢复
 - ✅ 消息序列化/反序列化
+- ✅ 滑动窗口自动修剪（防止内存泄漏）
 
 ---
 

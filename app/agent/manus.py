@@ -317,54 +317,6 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
 2. After outputting text, call terminate()
 3. Next step (after user replies "优化") = Call cv_editor_agent()"""
 
-    def _generate_intent_hint(self, result: Dict[str, Any]) -> str:
-        """根据意图识别结果生成提示"""
-        intent = result["intent"]
-        tool = result.get("tool")
-        tool_args = result.get("tool_args", {})
-
-        hints = []
-
-        if intent == Intent.GREETING:
-            hints.append("用户在打招呼，请友好回应并介绍你的能力。")
-
-        elif intent == Intent.VIEW_RESUME:
-            hints.append(f"用户想查看简历，请使用 {tool} 工具。")
-
-        elif intent == Intent.ANALYZE:
-            hints.append(f"用户想分析简历，请使用 {tool} 工具进行深入分析。")
-
-        elif intent == Intent.OPTIMIZE:
-            hints.append(f"用户想优化简历，请使用 {tool} 工具。")
-            if tool_args:
-                hints.append(f"参数: {tool_args}")
-
-        elif intent == Intent.OPTIMIZE_SECTION:
-            section = tool_args.get("section", "工作经历")
-            hints.append(f"用户想优化 [{section}] 模块。")
-            hints.append(f"请调用: {tool}(action='optimize_section', section='{section}')")
-
-        elif intent == Intent.ANSWER_QUESTION:
-            question = tool_args.get("question", "问题1")
-            section = tool_args.get("section", "工作经历")
-            answer = tool_args.get("answer", "")
-            hints.append(f"用户正在回答 {question}。")
-            hints.append(f"请调用: {tool}(action='optimize_section', section='{section}', answer='{answer[:50]}...', question='{question}')")
-            hints.append("**重要**: 直接调用工具处理回答，不要重新分析简历！")
-
-        elif intent == Intent.CONFIRM:
-            if tool:
-                hints.append(f"用户确认了操作，请使用 {tool} 工具继续。")
-            else:
-                hints.append("用户确认了操作，请根据之前的建议继续。")
-
-        else:
-            hints.append("无法确定用户意图，请根据对话上下文理解用户需求。")
-            context_state = self._conversation_state.context.state
-            hints.append(f"当前状态: {context_state.value}")
-
-        return "\n".join(hints)
-
     async def think(self) -> bool:
         """Process current state and decide next actions using LLM intent recognition."""
         if not self._initialized:
