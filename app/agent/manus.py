@@ -196,7 +196,7 @@ class Manus(ToolCallAgent):
                     return content
         return ""
 
-    async def _generate_dynamic_prompts(self, user_input: str) -> tuple:
+    async def _generate_dynamic_prompts(self, user_input: str, intent: "Intent" = None) -> tuple:
         """
         根据用户输入和对话状态动态生成提示词
 
@@ -224,14 +224,22 @@ class Manus(ToolCallAgent):
             context=context
         )
 
-        # 生成下一步提示词
-        next_step = await self._generate_next_step_prompt()
+        # 生成下一步提示词（传入 intent 用于判断是否需要决策逻辑）
+        next_step = await self._generate_next_step_prompt(intent)
 
         logger.info(f"💭 提示词已生成，当前状态: {context}")
         return system_prompt, next_step
 
-    async def _generate_next_step_prompt(self) -> str:
-        """生成下一步提示词（分析结果输出格式）"""
+    async def _generate_next_step_prompt(self, intent: "Intent" = None) -> str:
+        """生成下一步提示词（分析结果输出格式）
+
+        对话类意图（GREETING、UNKNOWN）不返回决策逻辑，避免 LLM 误输出。
+        """
+        # 🚨 对话类意图：返回简单的继续指令，不返回复杂的决策逻辑
+        # 这样可以避免 LLM 把决策提示词当作内容输出
+        if intent in [Intent.GREETING, Intent.UNKNOWN]:
+            return "直接回答用户的问题。如果需要使用工具，根据用户需求调用相应的工具。"
+
         # 检查是否有分析工具刚执行完
         recent_analysis = False
         analysis_tool_name = None
@@ -408,8 +416,8 @@ The analysis tool ({analysis_tool_name}) has returned the following result. You 
         if intent == Intent.CONFIRM:
             return await self._handle_optimize_confirm()
 
-        # 动态生成提示词
-        self.system_prompt, self.next_step_prompt = await self._generate_dynamic_prompts(user_input)
+        # 动态生成提示词（传入 intent 用于判断是否需要决策逻辑）
+        self.system_prompt, self.next_step_prompt = await self._generate_dynamic_prompts(user_input, intent)
 
         # 检查是否需要浏览器上下文
         recent_messages = self.memory.messages[-3:] if self.memory.messages else []
