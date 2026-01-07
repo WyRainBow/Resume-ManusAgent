@@ -393,8 +393,8 @@ class LLM:
         return formatted_messages
 
     @retry(
-        wait=wait_random_exponential(min=1, max=60),
-        stop=stop_after_attempt(6),
+        wait=wait_random_exponential(min=1, max=10),  # 优化：缩短等待时间
+        stop=stop_after_attempt(3),  # 优化：减少重试次数
         retry=retry_if_exception_type(
             (OpenAIError, Exception, ValueError)
         ),  # Don't retry TokenLimitExceeded
@@ -520,8 +520,8 @@ class LLM:
             raise
 
     @retry(
-        wait=wait_random_exponential(min=1, max=60),
-        stop=stop_after_attempt(6),
+        wait=wait_random_exponential(min=1, max=10),  # 优化：缩短等待时间
+        stop=stop_after_attempt(3),  # 优化：减少重试次数
         retry=retry_if_exception_type(
             (OpenAIError, Exception, ValueError)
         ),  # Don't retry TokenLimitExceeded
@@ -676,8 +676,8 @@ class LLM:
             raise
 
     @retry(
-        wait=wait_random_exponential(min=1, max=60),
-        stop=stop_after_attempt(6),
+        wait=wait_random_exponential(min=1, max=10),  # 优化：缩短等待时间
+        stop=stop_after_attempt(3),  # 优化：减少重试次数
         retry=retry_if_exception_type(
             (OpenAIError, Exception, ValueError)
         ),  # Don't retry TokenLimitExceeded

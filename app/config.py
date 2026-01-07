@@ -25,7 +25,7 @@ class LLMSettings(BaseModel):
         None,
         description="Maximum input tokens to use across all requests (None for unlimited)",
     )
-    temperature: float = Field(1.0, description="Sampling temperature")
+    temperature: float = Field(0.3, description="Sampling temperature")
     api_type: str = Field(..., description="Azure, Openai, or Ollama")
     api_version: str = Field(..., description="Azure Openai version if AzureOpenai")
 
@@ -245,7 +245,7 @@ class Config:
             "api_key": base_llm.get("api_key"),
             "max_tokens": base_llm.get("max_tokens", 4096),
             "max_input_tokens": base_llm.get("max_input_tokens"),
-            "temperature": base_llm.get("temperature", 1.0),
+            "temperature": base_llm.get("temperature", 0.3),
             "api_type": base_llm.get("api_type", ""),
             "api_version": base_llm.get("api_version", ""),
         }
