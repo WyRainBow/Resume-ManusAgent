@@ -8,8 +8,38 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, AsyncIterator, Callable, Optional
+from typing import Any, AsyncIterator, Callable, Optional, Tuple
 from datetime import datetime
+
+
+def parse_thought_response(content: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    解析 LLM 输出中的 Thought 和 Response 部分
+    复刻自 sophia-pro 的输出格式解析
+    
+    Returns:
+        (thought, response) - 如果没有找到对应部分则为 None
+    """
+    thought = None
+    response = None
+    
+    # 使用更严谨的正则表达式匹配 Thought: 和 Response:
+    # 考虑可能存在的换行和空格
+    thought_match = re.search(r'Thought:\s*(.*?)(?=\n*Response:|$)', content, re.DOTALL | re.IGNORECASE)
+    response_match = re.search(r'Response:\s*(.*)', content, re.DOTALL | re.IGNORECASE)
+    
+    if thought_match:
+        thought = thought_match.group(1).strip()
+    
+    if response_match:
+        response = response_match.group(1).strip()
+    
+    # 如果找到了 Thought 但没找到 Response（还在生成中），或者找到了 Response
+    if thought or response:
+        return thought, response
+    
+    # 如果都没有找到格式化的输出，返回原始内容作为 response
+    return None, content
 
 from app.agent.manus import Manus
 from app.schema import AgentState as SchemaAgentState, Message, Role
@@ -177,8 +207,22 @@ class AgentStream:
                                 break
 
                         if final_answer and not self._answer_sent_in_loop:
+                            # 🎯 解析 Thought 和 Response（复刻自 sophia-pro）
+                            thought_part, response_part = parse_thought_response(final_answer)
+                            logger.info(f"[FINISHED 解析] thought={thought_part[:50] if thought_part else None}... response={response_part[:50] if response_part else None}...")
+                            
+                            # 先发送 Thought（如果有）
+                            if thought_part:
+                                logger.info(f"[Thought Process] {thought_part[:100]}...")
+                                yield ThoughtEvent(
+                                    thought=thought_part,
+                                    session_id=self._session_id,
+                                )
+                            
+                            # 再发送 Response
+                            final_content = response_part if response_part else final_answer
                             yield AnswerEvent(
-                                content=final_answer,
+                                content=final_content,
                                 is_complete=True,
                                 session_id=self._session_id,
                             )
@@ -231,28 +275,60 @@ class AgentStream:
                                     continue
                                 self._sent_thoughts.add(content_hash)
 
+                                # 🎯 解析 Thought 和 Response 格式（复刻自 sophia-pro）
+                                logger.info(f"[解析前] 原始内容: {msg.content[:150]}...")
+                                thought_part, response_part = parse_thought_response(msg.content)
+                                logger.info(f"[解析后] thought={thought_part[:50] if thought_part else None}... response={response_part[:50] if response_part else None}...")
+                                
                                 # 判断是否是分析结果回复
+                                check_content = response_part or msg.content
                                 contains_analysis_result = any(
-                                    marker in msg.content for marker in ANALYSIS_RESULT_MARKERS
+                                    marker in check_content for marker in ANALYSIS_RESULT_MARKERS
                                 )
                                 is_final_answer = has_recent_analysis_result and contains_analysis_result
 
-                                if is_final_answer:
-                                    # 分析结果回复 - 标记为 answer
-                                    logger.info(f"[分析结果回复] {msg.content[:200]}...")
-                                    self._answer_sent_in_loop = True  # 🚨 标记已发送 answer
-                                    yield AnswerEvent(
-                                        content=msg.content,
-                                        is_complete=True,
-                                        session_id=self._session_id,
-                                    )
-                                else:
-                                    # 思考过程 - 标记为 thought
-                                    logger.debug(f"[思考过程] {msg.content[:100]}...")
+                                # 先发送 Thought（如果有）
+                                if thought_part:
+                                    logger.info(f"[Thought Process] {thought_part[:100]}...")
                                     yield ThoughtEvent(
-                                        thought=msg.content,
+                                        thought=thought_part,
                                         session_id=self._session_id,
                                     )
+
+                                # 再发送 Response/Answer
+                                if response_part:
+                                    if is_final_answer:
+                                        logger.info(f"[分析结果回复] {response_part[:200]}...")
+                                        self._answer_sent_in_loop = True
+                                        yield AnswerEvent(
+                                            content=response_part,
+                                            is_complete=True,
+                                            session_id=self._session_id,
+                                        )
+                                    else:
+                                        logger.info(f"[Response] {response_part[:100]}...")
+                                        yield AnswerEvent(
+                                            content=response_part,
+                                            is_complete=False,
+                                            session_id=self._session_id,
+                                        )
+                                elif not thought_part:
+                                    # 没有格式化输出，使用原始逻辑
+                                    if is_final_answer:
+                                        logger.info(f"[分析结果回复] {msg.content[:200]}...")
+                                        self._answer_sent_in_loop = True
+                                        yield AnswerEvent(
+                                            content=msg.content,
+                                            is_complete=True,
+                                            session_id=self._session_id,
+                                        )
+                                    else:
+                                        # 思考过程 - 标记为 thought
+                                        logger.debug(f"[思考过程] {msg.content[:100]}...")
+                                        yield ThoughtEvent(
+                                            thought=msg.content,
+                                            session_id=self._session_id,
+                                        )
 
                         elif msg.tool_calls:
                             # 非 assistant 消息的 tool_calls（fallback）

@@ -574,7 +574,7 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    PORT = 8000
+    PORT = 8080
     print("========================================")
     print("  OpenManus Web 服务器")
     print("========================================")

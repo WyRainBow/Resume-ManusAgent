@@ -375,14 +375,11 @@ class Manus(ToolCallAgent):
                 self.state = AgentState.FINISHED
                 return False
 
-        # 🎯 GREETING 意图：直接回复问候
+        # 🎯 GREETING 意图：让 LLM 处理（通过 prompt 中的 greeting_exception 规则）
+        # 不再硬编码回复，让 LLM 根据 prompt 规则自己生成 Thought 和 Response
         if intent == Intent.GREETING:
-            greeting_content = "你好！我是 OpenManus，您的简历优化助手。\n\n我可以帮您：\n- 📊 分析简历质量\n- ✏️ 优化简历内容\n- 💡 提供求职建议\n\n请告诉我您的需求，比如「分析简历」或「优化教育经历」。"
-            self.memory.add_message(Message.assistant_message(greeting_content))
-            logger.info("👋 GREETING: 直接返回问候并终止")
-            from app.schema import AgentState
-            self.state = AgentState.FINISHED
-            return False
+            logger.info("👋 GREETING: 交给 LLM 处理（遵循 greeting_exception 规则）")
+            # 继续往下走，让 LLM 处理
 
         # 🎯 LOAD_RESUME 意图：直接调用工具
         if tool and self._conversation_state.should_use_tool_directly(intent):
