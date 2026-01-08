@@ -16,28 +16,28 @@ def parse_thought_response(content: str) -> Tuple[Optional[str], Optional[str]]:
     """
     解析 LLM 输出中的 Thought 和 Response 部分
     复刻自 sophia-pro 的输出格式解析
-    
+
     Returns:
         (thought, response) - 如果没有找到对应部分则为 None
     """
     thought = None
     response = None
-    
+
     # 使用更严谨的正则表达式匹配 Thought: 和 Response:
     # 考虑可能存在的换行和空格
     thought_match = re.search(r'Thought:\s*(.*?)(?=\n*Response:|$)', content, re.DOTALL | re.IGNORECASE)
     response_match = re.search(r'Response:\s*(.*)', content, re.DOTALL | re.IGNORECASE)
-    
+
     if thought_match:
         thought = thought_match.group(1).strip()
-    
+
     if response_match:
         response = response_match.group(1).strip()
-    
+
     # 如果找到了 Thought 但没找到 Response（还在生成中），或者找到了 Response
     if thought or response:
         return thought, response
-    
+
     # 如果都没有找到格式化的输出，返回原始内容作为 response
     return None, content
 
@@ -194,6 +194,7 @@ class AgentStream:
 
                     # 执行一步
                     step_result = await self.agent.step()
+                    logger.info(f"🔍 [DEBUG] step() 返回: {step_result}, agent.state: {self.agent.state}, _answer_sent_in_loop: {self._answer_sent_in_loop}")
 
                     # 🔍 调试：检查状态变化
                     if self.agent.state == SchemaAgentState.FINISHED:
@@ -206,11 +207,13 @@ class AgentStream:
                                 final_answer = msg.content
                                 break
 
+                        logger.info(f"🔍 [DEBUG] FINISHED 状态检查: final_answer={final_answer[:100] if final_answer else None}..., _answer_sent_in_loop={self._answer_sent_in_loop}")
+
                         if final_answer and not self._answer_sent_in_loop:
                             # 🎯 解析 Thought 和 Response（复刻自 sophia-pro）
                             thought_part, response_part = parse_thought_response(final_answer)
                             logger.info(f"[FINISHED 解析] thought={thought_part[:50] if thought_part else None}... response={response_part[:50] if response_part else None}...")
-                            
+
                             # 先发送 Thought（如果有）
                             if thought_part:
                                 logger.info(f"[Thought Process] {thought_part[:100]}...")
@@ -218,7 +221,7 @@ class AgentStream:
                                     thought=thought_part,
                                     session_id=self._session_id,
                                 )
-                            
+
                             # 再发送 Response
                             final_content = response_part if response_part else final_answer
                             yield AnswerEvent(
@@ -279,7 +282,7 @@ class AgentStream:
                                 logger.info(f"[解析前] 原始内容: {msg.content[:150]}...")
                                 thought_part, response_part = parse_thought_response(msg.content)
                                 logger.info(f"[解析后] thought={thought_part[:50] if thought_part else None}... response={response_part[:50] if response_part else None}...")
-                                
+
                                 # 判断是否是分析结果回复
                                 check_content = response_part or msg.content
                                 contains_analysis_result = any(
