@@ -13,6 +13,16 @@ import json
 
 from app.logger import logger
 
+# 可选导入新的意图识别系统
+try:
+    from app.services.intent.intent_enhancer import AgentIntentEnhancer
+    from app.services.intent.tool_registry import get_tool_registry
+    from app.tool.tool_collection import ToolCollection
+    INTENT_ENHANCER_AVAILABLE = True
+except ImportError:
+    INTENT_ENHANCER_AVAILABLE = False
+    AgentIntentEnhancer = None
+
 
 class ConversationState(str, Enum):
     """对话状态"""
@@ -60,15 +70,38 @@ class ConversationStateManager:
     - 只负责状态机和意图识别
     """
 
-    def __init__(self, llm=None):
+    def __init__(self, llm=None, tool_collection: Optional[ToolCollection] = None, use_enhanced_intent: bool = True):
         """
         初始化对话状态管理器
 
         Args:
             llm: LLM 客户端实例，用于意图识别
+            tool_collection: 工具集合（用于初始化工具注册表）
+            use_enhanced_intent: 是否使用增强的意图识别系统（默认 True）
         """
         self.context = ConversationContext()
         self.llm = llm
+        self.use_enhanced_intent = use_enhanced_intent and INTENT_ENHANCER_AVAILABLE
+        
+        # 初始化增强的意图识别系统
+        self.intent_enhancer = None
+        if self.use_enhanced_intent:
+            try:
+                # 初始化工具注册表
+                registry = get_tool_registry(tool_collection)
+                
+                # 创建意图增强器
+                from app.services.intent.intent_classifier import IntentClassifier
+                classifier = IntentClassifier(
+                    registry=registry,
+                    use_llm=True,
+                    llm_client=llm
+                )
+                self.intent_enhancer = AgentIntentEnhancer(classifier=classifier)
+                logger.info("✅ 增强意图识别系统已启用")
+            except Exception as e:
+                logger.warning(f"增强意图识别系统初始化失败，回退到传统模式: {e}")
+                self.use_enhanced_intent = False
 
     async def classify_intent_with_llm(
         self,
@@ -223,10 +256,77 @@ class ConversationStateManager:
                 "tool_args": dict,
                 "context_prompt": str,
                 "should_skip_llm": bool,
+                "enhanced_query": str,  # 增强后的查询（如果使用增强意图识别）
+                "intent_result": Any,   # 意图识别结果（如果使用增强意图识别）
             }
         """
         self.context.turn_count += 1
 
+        # 如果使用增强意图识别系统
+        if self.use_enhanced_intent and self.intent_enhancer:
+            try:
+                # 使用意图增强器
+                enhanced_query, intent_result = await self.intent_enhancer.enhance_query(
+                    user_input,
+                    context={
+                        "conversation_history": conversation_history,
+                        "last_ai_message": last_ai_message,
+                    }
+                )
+                
+                # 检查是否是问候
+                if intent_result and intent_result.intent_type.value == "greeting":
+                    result = {
+                        "intent": Intent.GREETING,
+                        "tool": None,
+                        "tool_args": {},
+                        "context_prompt": "",
+                        "should_skip_llm": False,
+                        "enhanced_query": enhanced_query,
+                        "intent_result": intent_result,
+                    }
+                    self.context.state = ConversationState.GREETING
+                    return result
+                
+                # 检查是否识别到工具
+                if intent_result and intent_result.matched_tools:
+                    # 提取文件路径（如果是加载简历）
+                    tool_name = intent_result.matched_tools[0]
+                    tool_args = {}
+                    if tool_name == "cv_reader_agent":
+                        import re
+                        file_path_match = re.search(r'加载简历\s*([^\s]+)', user_input)
+                        if file_path_match:
+                            tool_args["file_path"] = file_path_match.group(1)
+                    
+                    result = {
+                        "intent": Intent.LOAD_RESUME if tool_name == "cv_reader_agent" else Intent.UNKNOWN,
+                        "tool": tool_name,
+                        "tool_args": tool_args,
+                        "context_prompt": "",
+                        "should_skip_llm": False,
+                        "enhanced_query": enhanced_query,
+                        "intent_result": intent_result,
+                    }
+                    return result
+                
+                # 未识别到特定工具，返回增强后的查询
+                result = {
+                    "intent": Intent.UNKNOWN,
+                    "tool": None,
+                    "tool_args": {},
+                    "context_prompt": "",
+                    "should_skip_llm": False,
+                    "enhanced_query": enhanced_query,
+                    "intent_result": intent_result,
+                }
+                return result
+                
+            except Exception as e:
+                logger.warning(f"增强意图识别失败，回退到传统模式: {e}")
+                # 继续使用传统模式
+        
+        # 传统模式（向后兼容）
         intent, info = await self.detect_intent(
             user_input=user_input,
             conversation_history=conversation_history,

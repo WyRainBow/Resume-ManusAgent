@@ -81,7 +81,12 @@ class Manus(ToolCallAgent):
         """Initialize basic components synchronously."""
         self.browser_context_helper = BrowserContextHelper(self)
         # 初始化对话状态管理器（LLM 会在 base.py 的 initialize_agent 中初始化）
-        self._conversation_state = ConversationStateManager(llm=None)
+        # 传递 tool_collection 以支持增强意图识别
+        self._conversation_state = ConversationStateManager(
+            llm=None,
+            tool_collection=self.available_tools,
+            use_enhanced_intent=True
+        )
         # 初始化聊天历史管理器
         self._chat_history = ChatHistoryManager(k=30)  # 滑动窗口：保留最近30条消息
         return self
@@ -344,7 +349,7 @@ class Manus(ToolCallAgent):
         # 获取最后的用户输入
         user_input = self._get_last_user_input()
 
-        # 🧠 使用 LLM 意图识别
+        # 🧠 使用 LLM 意图识别（可能包含增强后的查询）
         intent_result = await self._conversation_state.process_input(
             user_input=user_input,
             conversation_history=self.memory.messages[-5:],
@@ -354,8 +359,23 @@ class Manus(ToolCallAgent):
         intent = intent_result["intent"]
         tool = intent_result.get("tool")
         tool_args = intent_result.get("tool_args", {})
+        enhanced_query = intent_result.get("enhanced_query", user_input)  # 获取增强后的查询
+        intent_result_obj = intent_result.get("intent_result")  # 获取意图识别结果对象
 
         logger.info(f"🧠 意图识别: {intent.value}, 建议工具: {tool}")
+        if enhanced_query != user_input:
+            logger.info(f"📝 增强后的查询: {enhanced_query}")
+
+        # 如果查询被增强（包含工具标记），更新最后一条用户消息
+        if enhanced_query != user_input and self.memory.messages:
+            # 找到最后一条用户消息并更新
+            for i in range(len(self.memory.messages) - 1, -1, -1):
+                msg = self.memory.messages[i]
+                if msg.role == Role.USER:
+                    # 更新消息内容为增强后的查询
+                    msg.content = enhanced_query
+                    logger.debug(f"已更新用户消息为增强查询: {enhanced_query}")
+                    break
 
         # 🔑 特殊处理：检查是否刚应用了优化
         if getattr(self, '_just_applied_optimization', False):

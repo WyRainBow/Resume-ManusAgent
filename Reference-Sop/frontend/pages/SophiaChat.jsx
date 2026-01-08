@@ -486,3 +486,6 @@ export default function SophiaChat() {
   );
 }
 
+
+
+

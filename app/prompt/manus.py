@@ -49,6 +49,10 @@ Use these tools when appropriate:
 | cv_editor_agent | Edit resume content |
 | terminate | Complete the task |
 
+## Tool Tags (Optional)
+
+If the user query contains a tool tag like `/[tool:tool_name]`, it indicates that the user's intent is to use that specific tool. You should prioritize using that tool when appropriate. The tool tag is a hint, not a strict requirement - use your judgment based on the actual query content.
+
 ## Guidelines
 
 - Use tools only for resume-specific operations (loading, analyzing, editing)
