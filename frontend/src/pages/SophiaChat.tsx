@@ -1,6 +1,6 @@
 /**
  * SophiaChat - 复刻 sophia-pro 风格的对话页面
- * 
+ *
  * 使用 SSE (Server-Sent Events) 替代 WebSocket
  *
  * 功能：
@@ -190,7 +190,7 @@ export default function SophiaChat() {
 
     const userMessage = input.trim();
     const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // Add user message to UI
     setMessages(prev => [...prev, {
       id: uniqueId,
@@ -198,7 +198,7 @@ export default function SophiaChat() {
       content: userMessage,
       timestamp: new Date().toISOString(),
     }]);
-    
+
     // Reset state for new message
     setCurrentThought('');
     setCurrentAnswer('');

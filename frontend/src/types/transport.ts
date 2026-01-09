@@ -1,13 +1,13 @@
 /**
  * Transport layer types for SSE communication
- * 
+ *
  * Replaces websocket.ts types with SSE-compatible types
  */
 
 /**
  * SSE Event types from backend
  */
-export type SSEEventType = 
+export type SSEEventType =
   | 'thought'
   | 'answer'
   | 'tool_call'
@@ -37,22 +37,22 @@ export interface SSEEventData {
   content?: string;
   is_complete?: boolean;
   conversation_id?: string;
-  
+
   // Tool events
   tool?: string;
   args?: Record<string, any>;
   result?: string;
   tool_call_id?: string;
-  
+
   // Agent events
   agent_name?: string;
   task?: string;
   success?: boolean;
-  
+
   // Error events
   error_message?: string;
   error_type?: string;
-  
+
   // System events
   message?: string;
   level?: string;
@@ -79,52 +79,52 @@ export interface NormalizedMessage {
  */
 export function normalizeSSEEvent(event: SSEMessage): NormalizedMessage {
   const { type, data } = event;
-  
+
   switch (type) {
     case 'thought':
       return {
         type: 'thought',
         content: data.content,
       };
-      
+
     case 'answer':
       return {
         type: 'answer',
         content: data.content,
         is_complete: data.is_complete,
       };
-      
+
     case 'status':
       return {
         type: 'status',
         content: data.content,
       };
-      
+
     case 'agent_start':
       return {
         type: 'agent_start',
         data: data,
       };
-      
+
     case 'agent_end':
       return {
         type: 'agent_end',
         data: data,
       };
-      
+
     case 'agent_error':
     case 'error':
       return {
         type: 'error',
         content: data.error_message || data.content,
       };
-      
+
     case 'system':
       return {
         type: 'system',
         content: data.message || data.content,
       };
-      
+
     default:
       return {
         type: 'system',

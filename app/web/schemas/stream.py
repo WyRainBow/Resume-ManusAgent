@@ -11,7 +11,7 @@ import uuid
 
 class StreamRequest(BaseModel):
     """SSE stream request model.
-    
+
     Attributes:
         prompt: User message to send to the agent
         conversation_id: Optional conversation ID for context
@@ -24,7 +24,7 @@ class StreamRequest(BaseModel):
 
 class SSEEvent(BaseModel):
     """SSE event model for responses.
-    
+
     Attributes:
         id: Unique event ID
         type: Event type (thought, answer, tool_call, etc.)
@@ -35,10 +35,10 @@ class SSEEvent(BaseModel):
     type: str
     data: Any = None
     timestamp: datetime = Field(default_factory=datetime.now)
-    
+
     def to_sse_format(self) -> str:
         """Convert event to SSE format string.
-        
+
         Returns:
             SSE formatted string: "id: {id}\ndata: {json}\n\n"
         """
@@ -54,7 +54,7 @@ class SSEEvent(BaseModel):
 
 class HeartbeatEvent(BaseModel):
     """Heartbeat event for keeping SSE connection alive.
-    
+
     Attributes:
         id: Unique event ID
         type: Always "heartbeat"
@@ -63,7 +63,7 @@ class HeartbeatEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     type: str = "heartbeat"
     timestamp: datetime = Field(default_factory=datetime.now)
-    
+
     def to_sse_format(self) -> str:
         """Convert heartbeat to SSE format string."""
         import json

@@ -37,20 +37,20 @@ HEARTBEAT_INTERVAL = 30  # seconds
 
 def _get_or_create_session(conversation_id: str, resume_path: Optional[str] = None) -> dict:
     """Get existing session or create a new one.
-    
+
     Args:
         conversation_id: Conversation identifier
         resume_path: Optional path to resume file
-        
+
     Returns:
         Session dict containing agent and chat history
     """
     if conversation_id not in _active_sessions:
         from app.memory import ChatHistoryManager
-        
+
         agent = Manus()
         chat_history = ChatHistoryManager()
-        
+
         _active_sessions[conversation_id] = {
             "agent": agent,
             "chat_history": chat_history,
@@ -62,13 +62,13 @@ def _get_or_create_session(conversation_id: str, resume_path: Optional[str] = No
         # Update resume path if provided
         if resume_path:
             _active_sessions[conversation_id]["resume_path"] = resume_path
-            
+
     return _active_sessions[conversation_id]
 
 
 def _cleanup_session(conversation_id: str) -> None:
     """Cleanup session after completion.
-    
+
     Args:
         conversation_id: Conversation identifier to cleanup
     """
@@ -83,31 +83,31 @@ async def _stream_event_generator(
     resume_path: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """Generate SSE events from agent execution.
-    
+
     This generator:
     1. Creates/gets agent session
     2. Streams agent events as SSE format
     3. Sends heartbeat when idle
     4. Handles errors gracefully
-    
+
     Args:
         conversation_id: Conversation identifier
         prompt: User message
         resume_path: Optional resume file path
-        
+
     Yields:
         SSE formatted strings
     """
     session = _get_or_create_session(conversation_id, resume_path)
     agent = session["agent"]
     chat_history = session["chat_history"]
-    
+
     # Create state machine for this execution
     state_machine = AgentStateMachine(conversation_id)
-    
+
     # Track last message time for heartbeat
     last_message_time = time.time()
-    
+
     try:
         # Send initial status event
         status_event = SSEEvent(
@@ -116,7 +116,7 @@ async def _stream_event_generator(
         )
         yield status_event.to_sse_format()
         last_message_time = time.time()
-        
+
         # Restore chat history to agent memory if needed
         existing_messages = chat_history.get_messages()
         if existing_messages and len(agent.memory.messages) == 0:
@@ -137,10 +137,10 @@ async def _stream_event_generator(
                         name=msg.name or "unknown",
                         tool_call_id=msg.tool_call_id or ""
                     ))
-        
+
         # Add user message to chat history
         chat_history.add_message(Message(role=Role.USER, content=prompt))
-        
+
         # Execute agent and stream events
         async for event in stream_processor.start_stream(
             session_id=conversation_id,
@@ -158,24 +158,24 @@ async def _stream_event_generator(
             )
             yield sse_event.to_sse_format()
             last_message_time = time.time()
-            
+
             # Small delay to prevent overwhelming the client
             await asyncio.sleep(0.01)
-            
+
             # Check if heartbeat is needed during long operations
             current_time = time.time()
             if current_time - last_message_time > HEARTBEAT_INTERVAL:
                 heartbeat = HeartbeatEvent()
                 yield heartbeat.to_sse_format()
                 last_message_time = current_time
-        
+
         # Send completion status
         complete_event = SSEEvent(
             type="status",
             data={"content": "complete", "conversation_id": conversation_id}
         )
         yield complete_event.to_sse_format()
-        
+
     except asyncio.CancelledError:
         logger.info(f"[SSE] Stream cancelled for session: {conversation_id}")
         cancel_event = SSEEvent(
@@ -183,7 +183,7 @@ async def _stream_event_generator(
             data={"content": "cancelled", "conversation_id": conversation_id}
         )
         yield cancel_event.to_sse_format()
-        
+
     except Exception as e:
         logger.exception(f"[SSE] Error in stream for session {conversation_id}: {e}")
         error_event = SSEEvent(
@@ -191,7 +191,7 @@ async def _stream_event_generator(
             data={"content": str(e), "error_type": type(e).__name__}
         )
         yield error_event.to_sse_format()
-        
+
     finally:
         _cleanup_session(conversation_id)
 
@@ -199,24 +199,24 @@ async def _stream_event_generator(
 @router.post("/stream")
 async def stream_events(request: StreamRequest) -> StreamingResponse:
     """SSE streaming endpoint for agent interaction.
-    
+
     This endpoint:
     1. Accepts user messages
     2. Returns Server-Sent Events stream
     3. Includes heartbeat for connection keep-alive
-    
+
     Args:
         request: StreamRequest with prompt and optional conversation_id
-        
+
     Returns:
         StreamingResponse with SSE content
     """
     # Generate conversation ID if not provided
     conversation_id = request.conversation_id or str(uuid.uuid4())
-    
+
     logger.info(f"[SSE] Starting stream for conversation: {conversation_id}")
     logger.info(f"[SSE] Prompt: {request.prompt[:100]}...")
-    
+
     return StreamingResponse(
         _stream_event_generator(
             conversation_id=conversation_id,
@@ -237,15 +237,15 @@ async def stream_events(request: StreamRequest) -> StreamingResponse:
 @router.post("/stream/stop/{conversation_id}")
 async def stop_stream(conversation_id: str) -> dict:
     """Stop an active stream.
-    
+
     Args:
         conversation_id: The conversation to stop
-        
+
     Returns:
         Status message
     """
     success = await stream_processor.stop_stream(conversation_id)
-    
+
     if success:
         logger.info(f"[SSE] Stopped stream for conversation: {conversation_id}")
         return {"status": "stopped", "conversation_id": conversation_id}
@@ -256,10 +256,10 @@ async def stop_stream(conversation_id: str) -> dict:
 @router.delete("/stream/session/{conversation_id}")
 async def clear_session(conversation_id: str) -> dict:
     """Clear a conversation session.
-    
+
     Args:
         conversation_id: The conversation to clear
-        
+
     Returns:
         Status message
     """
