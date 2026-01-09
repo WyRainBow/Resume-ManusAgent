@@ -243,3 +243,7 @@ def get_tool_registry(tool_collection: Optional[ToolCollection] = None) -> ToolR
     return ToolRegistry._instance
 
 
+
+
+
+

@@ -60,7 +60,7 @@ tests/
 *.bak
 .cache/
 
-# Docs (keep docs/ folder)
+docs/
 
 # External repositories
 langchain/

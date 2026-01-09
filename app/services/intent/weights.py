@@ -19,3 +19,7 @@ class IntentScoreWeights:
     desc_max: float = 0.2        # 描述匹配最高分
 
 
+
+
+
+
