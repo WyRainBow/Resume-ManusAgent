@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowUp } from 'lucide-react';
 import ChatMessage from '@/components/chat/ChatMessage';
 import { Message } from '@/types/chat';
 import { SSETransport, SSEEvent, createSSETransport } from '@/transports/SSETransport';
@@ -311,24 +312,36 @@ export default function SophiaChat() {
       <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white to-transparent pt-6 pb-6">
         <div className="max-w-4xl mx-auto px-6">
           <form onSubmit={handleSubmit}>
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="flex items-center">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="输入消息..."
-                  className="flex-1 px-4 py-3 outline-none text-gray-700 placeholder-gray-400"
-                  disabled={isProcessing}
-                />
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex items-center">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="输入消息..."
+                className="flex-1 px-4 py-3 outline-none text-gray-700 placeholder-gray-400 bg-transparent"
+                disabled={isProcessing}
+              />
+              <div className="pr-2 py-2">
                 <button
                   type="submit"
                   disabled={!input.trim() || isProcessing}
-                  className="px-6 py-3 text-gray-500 hover:text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className={`
+                    w-8 h-8 rounded-full flex items-center justify-center
+                    transition-all duration-200
+                    ${!input.trim() || isProcessing
+                      ? 'bg-gray-200 cursor-not-allowed'
+                      : 'bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 hover:from-orange-600 hover:via-orange-700 hover:to-orange-800 shadow-sm hover:shadow-md'
+                    }
+                  `}
+                  title="发送消息"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
+                  <ArrowUp
+                    className={`w-5 h-5 ${
+                      !input.trim() || isProcessing
+                        ? 'text-gray-400'
+                        : 'text-white'
+                    }`}
+                  />
                 </button>
               </div>
             </div>

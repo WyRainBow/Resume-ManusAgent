@@ -15,12 +15,109 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { Copy, Check } from 'lucide-react';
 import MermaidBlock from './MermaidBlock';
 
 /**
  * 自定义代码渲染器类型
  */
 export type CustomCodeRenderer = (code: string) => React.ReactNode;
+
+/**
+ * CodeBlock 组件 - 优化的代码块显示组件
+ *
+ * 特性：
+ * - 现代卡片样式（参考 ChatGPT/Sophia-Pro/Claude）
+ * - 右上角复制按钮（绝对定位）
+ * - 语言标识在左上角
+ * - 复制图标和状态反馈
+ */
+interface CodeBlockProps {
+  code: string;
+  language: string;
+}
+
+function CodeBlock({ code, language }: CodeBlockProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (typeof navigator === 'undefined') return;
+    if (!navigator.clipboard?.writeText) return;
+
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy code:', error);
+    }
+  };
+
+  return (
+    <div className="not-prose relative mb-4 group">
+      {/* 代码块容器 - 现代卡片样式（参考 ChatGPT/Sophia-Pro/Claude） */}
+      <div className="relative overflow-hidden rounded-lg border border-gray-300 bg-[#0d1117] shadow-sm">
+        {/* 语言标识 - 左上角 */}
+        <div className="absolute top-0 left-0 z-10 px-3 py-2">
+          <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">
+            {language}
+          </span>
+        </div>
+
+        {/* 复制按钮 - 右上角（参考 ChatGPT 样式） */}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2.5 py-1.5
+                     text-[11px] font-medium text-gray-300
+                     bg-gray-800
+                     border border-gray-600
+                     rounded-md
+                     hover:bg-gray-700
+                     hover:text-gray-100
+                     hover:border-gray-500
+                     transition-all duration-200"
+          title="复制代码"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-green-400" />
+              <span className="text-green-400">已复制</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              <span>复制</span>
+            </>
+          )}
+        </button>
+
+        {/* 代码内容区域 */}
+        <div className="pt-8 pb-4">
+          <SyntaxHighlighter
+            language={language}
+            style={vscDarkPlus}
+            PreTag="div"
+            customStyle={{
+              margin: 0,
+              padding: '0 1rem',
+              backgroundColor: 'transparent',
+              fontSize: '13px',
+              lineHeight: '1.6',
+            }}
+            codeTagProps={{
+              style: {
+                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+              },
+            }}
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * EnhancedMarkdown 组件的 Props
@@ -116,52 +213,32 @@ export default function EnhancedMarkdown({
                 return <>{customCodeRenderers[language](code)}</>;
               }
 
-              // 默认代码高亮
-              return (
-                <div className="relative mb-4">
-                  <div className="flex items-center justify-between bg-gray-900 px-4 py-2 rounded-t-lg border-b border-gray-700">
-                    <span className="text-xs text-gray-400 font-mono">{language}</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard?.writeText(code).catch(() => {});
-                      }}
-                      className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
-                      title="Copy to clipboard"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                  <SyntaxHighlighter
-                    language={language}
-                    style={vscDarkPlus}
-                    PreTag="div"
-                    className="rounded-b-lg"
-                    customStyle={{
-                      margin: 0,
-                      borderRadius: '0 0 0.5rem 0.5rem',
-                    }}
-                  >
-                    {code}
-                  </SyntaxHighlighter>
-                </div>
-              );
+              // 默认代码高亮 - 使用 CodeBlock 组件
+              return <CodeBlock code={code} language={language} />;
             }
             return <pre {...props}>{children}</pre>;
           },
-          // 内联代码样式
+          // 代码样式（内联和块级）
           code: ({ node, inline, className, children, ...props }: any) => {
-            const isInline = inline || !/language-(\w+)/.exec(className || '');
+            const match = /language-(\w+)/.exec(className || '');
+            const isBlock = !inline && match;
 
-            if (isInline) {
-              return (
-                <code className="bg-gray-200 rounded-sm px-1 font-mono text-sm" {...props}>
-                  {children}
-                </code>
-              );
+            // 块级代码（有语言标识）- 使用 CodeBlock 组件
+            if (isBlock) {
+              const language = match[1];
+              const code = String(children).replace(/\n$/, '');
+
+              // Mermaid 图表支持
+              if (language === 'mermaid') {
+                return <MermaidBlock code={code} className="mb-4" />;
+              }
+
+              return <CodeBlock code={code} language={language} />;
             }
 
+            // 内联代码
             return (
-              <code className={className} {...props}>
+              <code className="bg-gray-200 rounded-sm px-1 font-mono text-sm" {...props}>
                 {children}
               </code>
             );
