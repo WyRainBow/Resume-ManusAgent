@@ -1,25 +1,28 @@
 /**
  * SophiaChat - 复刻 sophia-pro 风格的对话页面
+ * 
+ * 使用 SSE (Server-Sent Events) 替代 WebSocket
  *
  * 功能：
  * - AI 输出的 Thought Process（来自后端，折叠面板样式）
  * - 流式输出和打字机效果
  * - Markdown 渲染
+ * - 心跳检测和自动重连
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ChatMessage from '@/components/chat/ChatMessage';
 import { Message } from '@/types/chat';
-import { WebSocketMessage, ConnectionStatus } from '@/types/websocket';
+import { SSETransport, SSEEvent, createSSETransport } from '@/transports/SSETransport';
+import { ConnectionStatus, normalizeSSEEvent, SSEMessage } from '@/types/transport';
 
 // ============================================================================
 // 配置
 // ============================================================================
 
-const WS_CONFIG = {
-  PORT: 8080,
-  PATH: '/ws',
-  getUrl: () => `ws://localhost:${WS_CONFIG.PORT}${WS_CONFIG.PATH}`
+const SSE_CONFIG = {
+  BASE_URL: 'http://localhost:8080',
+  HEARTBEAT_TIMEOUT: 60000,  // 60 seconds
 };
 
 // ============================================================================
@@ -29,79 +32,91 @@ const WS_CONFIG = {
 export default function SophiaChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
+  const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [currentThought, setCurrentThought] = useState('');
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const wsRef = useRef<WebSocket | null>(null);
+  const transportRef = useRef<SSETransport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const isFinalizedRef = useRef(false); // 防止 finalizeMessage 被多次调用
+  const isFinalizedRef = useRef(false);
 
+  // Initialize SSE transport
   useEffect(() => {
-    connectWebSocket();
-    return () => wsRef.current?.close();
+    const transport = createSSETransport({
+      baseUrl: SSE_CONFIG.BASE_URL,
+      heartbeatTimeout: SSE_CONFIG.HEARTBEAT_TIMEOUT,
+      onConnect: () => {
+        console.log('[SophiaChat] SSE Connected');
+      },
+      onDisconnect: () => {
+        console.log('[SophiaChat] SSE Disconnected');
+        // Only finalize if we were processing
+        if (isProcessing) {
+          finalizeMessage();
+        }
+      },
+      onError: (error) => {
+        console.error('[SophiaChat] SSE Error:', error);
+        setStatus('idle');
+        setIsProcessing(false);
+      },
+    });
+
+    // Add message listener
+    transport.onMessage((event: SSEEvent) => {
+      handleSSEEvent(event);
+    });
+
+    // Add error listener
+    transport.onError((error: Error) => {
+      console.error('[SophiaChat] Transport error:', error);
+    });
+
+    transportRef.current = transport;
+
+    // Set initial status to ready
+    setStatus('idle');
+
+    return () => {
+      transport.disconnect();
+    };
   }, []);
 
+  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentThought, currentAnswer]);
 
-  const connectWebSocket = () => {
-    const wsUrl = WS_CONFIG.getUrl();
-    console.log('[SophiaChat] Connecting to', wsUrl);
-    setStatus('connecting');
+  /**
+   * Handle SSE events from backend
+   */
+  const handleSSEEvent = useCallback((event: SSEEvent) => {
+    console.log('[SophiaChat] Received:', event.type, event);
 
-    const socket = new WebSocket(wsUrl);
+    // Convert to normalized format for compatibility
+    const normalized = normalizeSSEEvent(event as unknown as SSEMessage);
 
-    socket.onopen = () => {
-      console.log('[SophiaChat] Connected');
-      setStatus('idle');
-      wsRef.current = socket;
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const data: WebSocketMessage = JSON.parse(event.data);
-        console.log('[SophiaChat] Received:', data.type, data);
-        handleMessage(data);
-      } catch (e) {
-        console.error('[SophiaChat] Parse error:', e);
-      }
-    };
-
-    socket.onerror = () => setStatus('disconnected');
-    socket.onclose = () => {
-      setStatus('disconnected');
-      wsRef.current = null;
-      setTimeout(connectWebSocket, 3000);
-    };
-  };
-
-  const handleMessage = (data: WebSocketMessage) => {
-    switch (data.type) {
+    switch (normalized.type) {
       case 'thought':
-        setCurrentThought(prev => prev + (data.content || ''));
+        setCurrentThought(prev => prev + (normalized.content || ''));
         break;
 
       case 'answer':
-        setCurrentAnswer(prev => prev + (data.content || ''));
+        setCurrentAnswer(prev => prev + (normalized.content || ''));
         // 如果 answer 事件标记为完成，立即完成消息
-        if (data.is_complete) {
+        if (normalized.is_complete) {
           finalizeMessage();
         }
         break;
 
       case 'status':
-        if (data.content === 'processing') {
+        if (normalized.content === 'processing') {
           setIsProcessing(true);
-        } else if (data.content === 'complete' || data.content === 'stopped') {
+          setStatus('processing');
+        } else if (normalized.content === 'complete' || normalized.content === 'stopped') {
           finalizeMessage();
         }
-        break;
-
-      case 'complete':
-        finalizeMessage();
         break;
 
       case 'agent_end':
@@ -115,13 +130,17 @@ export default function SophiaChat() {
         break;
 
       case 'error':
+        console.error('[SophiaChat] Agent error:', normalized.content);
         setIsProcessing(false);
         setStatus('idle');
         break;
     }
-  };
+  }, []);
 
-  const finalizeMessage = () => {
+  /**
+   * Finalize current message and add to history
+   */
+  const finalizeMessage = useCallback(() => {
     // 防止重复调用
     if (isFinalizedRef.current) {
       console.log('[SophiaChat] finalizeMessage already called, skipping');
@@ -155,44 +174,80 @@ export default function SophiaChat() {
       });
       return '';
     });
-  };
 
-  const handleSubmit = (e: React.FormEvent) => {
+    // 延迟重置标志，允许下一次消息
+    setTimeout(() => {
+      isFinalizedRef.current = false;
+    }, 100);
+  }, []);
+
+  /**
+   * Send message to backend via SSE
+   */
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isProcessing) return;
 
     const userMessage = input.trim();
-    // 使用更唯一的 ID
     const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Add user message to UI
     setMessages(prev => [...prev, {
       id: uniqueId,
       role: 'user',
       content: userMessage,
       timestamp: new Date().toISOString(),
     }]);
+    
+    // Reset state for new message
     setCurrentThought('');
     setCurrentAnswer('');
     setIsProcessing(true);
-    isFinalizedRef.current = false; // 重置防重复标志
+    setStatus('processing');
+    isFinalizedRef.current = false;
+    setInput('');
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ prompt: userMessage }));
-      setStatus('processing');
-      setInput('');
+    // Send via SSE
+    if (transportRef.current) {
+      try {
+        await transportRef.current.send(userMessage);
+      } catch (error) {
+        console.error('[SophiaChat] Failed to send message:', error);
+        setIsProcessing(false);
+        setStatus('idle');
+      }
     }
+  };
+
+  /**
+   * Clear conversation
+   */
+  const handleClearConversation = () => {
+    setMessages([]);
+    setCurrentThought('');
+    setCurrentAnswer('');
+    transportRef.current?.clearConversation();
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
       {/* Header */}
       <header className="border-b border-gray-100 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <h1 className="text-xl font-semibold text-gray-800">
-            SophiaPro Chat
-          </h1>
-          <p className="text-sm text-gray-500">
-            Thought Process · Streaming · Markdown
-          </p>
+        <div className="max-w-4xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div>
+            <h1 className="text-xl font-semibold text-gray-800">
+              SophiaPro Chat
+            </h1>
+            <p className="text-sm text-gray-500">
+              Thought Process · Streaming · Markdown · SSE
+            </p>
+          </div>
+          <button
+            onClick={handleClearConversation}
+            className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-200 hover:border-gray-300 transition-colors"
+          >
+            Clear
+          </button>
         </div>
       </header>
 
@@ -206,6 +261,9 @@ export default function SophiaChat() {
             </p>
             <p className="text-gray-400 text-sm">
               体验 Thought Process · 流式输出 · Markdown 渲染
+            </p>
+            <p className="text-gray-300 text-xs mt-4">
+              使用 SSE (Server-Sent Events) 传输
             </p>
           </div>
         )}
@@ -286,7 +344,7 @@ export default function SophiaChat() {
                 status === 'idle' ? 'bg-green-500' :
                 status === 'processing' ? 'bg-orange-500 animate-pulse' : 'bg-gray-400'
               }`}></span>
-              {status === 'idle' ? 'Ready' : status === 'processing' ? 'Processing...' : 'Connecting...'}
+              {status === 'idle' ? 'Ready (SSE)' : status === 'processing' ? 'Processing...' : 'Connecting...'}
             </span>
           </div>
         </div>
@@ -294,4 +352,3 @@ export default function SophiaChat() {
     </div>
   );
 }
-
