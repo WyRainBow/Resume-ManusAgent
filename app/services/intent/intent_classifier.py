@@ -323,3 +323,4 @@ class IntentClassifier:
             lines.append(f"- {tool_name}: {confidence:.2f}")
         return "\n".join(lines)
 
+

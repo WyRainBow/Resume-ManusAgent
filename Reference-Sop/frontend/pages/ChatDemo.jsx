@@ -1,6 +1,6 @@
 /**
  * ChatDemo 页面 - 演示意图识别、Thought Process、流式输出和 Markdown 渲染
- * 
+ *
  * 复刻自 sophia-pro 项目的聊天功能
  */
 
@@ -24,12 +24,12 @@ export default function ChatDemo() {
   const [ws, setWs] = useState(null);
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
-  
+
   // Thought Process 相关状态
   const [thoughtContent, setThoughtContent] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [intentReasoning, setIntentReasoning] = useState('');
-  
+
   // 流式输出相关状态
   const [streamingAnswer, setStreamingAnswer] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -156,7 +156,7 @@ export default function ChatDemo() {
 
     // 添加用户消息
     setMessages(prev => [...prev, { role: 'user', content: input }]);
-    
+
     // 重置状态
     setThoughtContent('');
     setStreamingAnswer('');
@@ -361,6 +361,12 @@ const MessageItem = ({ message }) => {
 
   return null;
 };
+
+
+
+
+
+
 
 
 

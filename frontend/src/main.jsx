@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
-import SophiaChat from './pages/SophiaChat.jsx'
+import SophiaChat from './pages/SophiaChat'
 import ErrorBoundary from './ErrorBoundary.jsx'
 import './index.css'
 
@@ -16,34 +16,34 @@ function getRouteFromHash() {
 
 function Router() {
   const [route, setRoute] = React.useState(getRouteFromHash);
-  
+
   React.useEffect(() => {
     const handleHashChange = () => {
       const newRoute = getRouteFromHash();
       console.log('[Router] Hash changed to:', newRoute);
       setRoute(newRoute);
     };
-    
+
     window.addEventListener('hashchange', handleHashChange);
-    
+
     // 初始化时也检查一次
     const initialRoute = getRouteFromHash();
     console.log('[Router] Initial route:', initialRoute);
     if (initialRoute !== route) {
       setRoute(initialRoute);
     }
-    
+
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
-  
+
   // 检查是否包含 sophia
   const isSophiaRoute = route.includes('sophia');
   console.log('[Router] Rendering:', isSophiaRoute ? 'SophiaChat' : 'App', '| route:', route);
-  
+
   if (isSophiaRoute) {
     return <SophiaChat />;
   }
-  
+
   return <App />;
 }
 

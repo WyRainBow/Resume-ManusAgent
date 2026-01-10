@@ -20,25 +20,129 @@ def parse_thought_response(content: str) -> Tuple[Optional[str], Optional[str]]:
     Returns:
         (thought, response) - 如果没有找到对应部分则为 None
     """
+    # #region debug log
+    import json
+    with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+        f.write(json.dumps({
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "A",
+            "location": "agent_stream.py:parse_thought_response:ENTRY",
+            "message": "parse_thought_response called",
+            "data": {"content_length": len(content) if content else 0, "content_preview": content[:200] if content else None},
+            "timestamp": int(__import__('time').time() * 1000)
+        }) + '\n')
+    # #endregion
+
     thought = None
     response = None
 
+    if not content or not content.strip():
+        # #region debug log
+        with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "C",
+                "location": "agent_stream.py:parse_thought_response:EMPTY",
+                "message": "content is empty or whitespace",
+                "data": {"content": content},
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+        # #endregion
+        return None, None
+
     # 使用更严谨的正则表达式匹配 Thought: 和 Response:
-    # 考虑可能存在的换行和空格
-    thought_match = re.search(r'Thought:\s*(.*?)(?=\n*Response:|$)', content, re.DOTALL | re.IGNORECASE)
-    response_match = re.search(r'Response:\s*(.*)', content, re.DOTALL | re.IGNORECASE)
+    # 考虑可能存在的换行和空格，支持多种格式变体
+    # 匹配模式：
+    # 1. Thought: ... Response: ...
+    # 2. **Thought:** ... **Response:** ...
+    # 3. Thought: ... (没有 Response)
+    # 4. 思考：... 回复：... (中文格式)
 
-    if thought_match:
-        thought = thought_match.group(1).strip()
+    # 尝试多种匹配模式
+    patterns = [
+        # 标准格式：Thought: ... Response: ...
+        (r'(?:^|\n)\s*(?:Thought|思考)[:：]\s*(.*?)(?=\n\s*(?:Response|回复)[:：]|$)',
+         r'(?:^|\n)\s*(?:Response|回复)[:：]\s*(.*)'),
+        # 加粗格式：**Thought:** ... **Response:** ...
+        (r'(?:^|\n)\s*\*\*Thought\*\*[:：]\s*(.*?)(?=\n\s*\*\*Response\*\*[:：]|$)',
+         r'(?:^|\n)\s*\*\*Response\*\*[:：]\s*(.*)'),
+        # 1. Thought: ... 2. Response: ... (带编号)
+        (r'(?:^|\n)\s*1\.\s*(?:Thought|思考)[:：]\s*(.*?)(?=\n\s*2\.\s*(?:Response|回复)[:：]|$)',
+         r'(?:^|\n)\s*2\.\s*(?:Response|回复)[:：]\s*(.*)'),
+    ]
 
-    if response_match:
-        response = response_match.group(1).strip()
+    for idx, (thought_pattern, response_pattern) in enumerate(patterns):
+        thought_match = re.search(thought_pattern, content, re.DOTALL | re.IGNORECASE | re.MULTILINE)
+        response_match = re.search(response_pattern, content, re.DOTALL | re.IGNORECASE | re.MULTILINE)
+
+        if thought_match:
+            thought = thought_match.group(1).strip()
+        if response_match:
+            response = response_match.group(1).strip()
+
+        # #region debug log
+        if thought_match or response_match:
+            with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "B",
+                    "location": f"agent_stream.py:parse_thought_response:PATTERN_{idx}",
+                    "message": "pattern matched",
+                    "data": {
+                        "pattern_idx": idx,
+                        "thought_matched": thought_match is not None,
+                        "response_matched": response_match is not None,
+                        "thought_preview": thought[:100] if thought else None,
+                        "response_preview": response[:100] if response else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        # #endregion
+
+        if thought or response:
+            break
 
     # 如果找到了 Thought 但没找到 Response（还在生成中），或者找到了 Response
     if thought or response:
+        # #region debug log
+        with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "B",
+                "location": "agent_stream.py:parse_thought_response:SUCCESS",
+                "message": "parse_thought_response success",
+                "data": {
+                    "thought_found": thought is not None,
+                    "response_found": response is not None,
+                    "thought_length": len(thought) if thought else 0,
+                    "response_length": len(response) if response else 0
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+        # #endregion
         return thought, response
 
     # 如果都没有找到格式化的输出，返回原始内容作为 response
+    # #region debug log
+    with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+        f.write(json.dumps({
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": "A",
+            "location": "agent_stream.py:parse_thought_response:NO_MATCH",
+            "message": "no pattern matched, returning original content as response",
+            "data": {
+                "content_preview": content[:200],
+                "content_contains_thought": "Thought:" in content or "思考:" in content or "**Thought**" in content,
+                "content_contains_response": "Response:" in content or "回复:" in content or "**Response**" in content
+            },
+            "timestamp": int(__import__('time').time() * 1000)
+        }) + '\n')
+    # #endregion
     return None, content
 
 from app.agent.manus import Manus
@@ -210,17 +314,80 @@ class AgentStream:
                         logger.info(f"🔍 [DEBUG] FINISHED 状态检查: final_answer={final_answer[:100] if final_answer else None}..., _answer_sent_in_loop={self._answer_sent_in_loop}")
 
                         if final_answer and not self._answer_sent_in_loop:
+                            # #region debug log
+                            import json
+                            with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                f.write(json.dumps({
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "D",
+                                    "location": "agent_stream.py:execute:FINISHED_BEFORE_PARSE",
+                                    "message": "before parse_thought_response in FINISHED state",
+                                    "data": {
+                                        "final_answer_length": len(final_answer) if final_answer else 0,
+                                        "final_answer_preview": final_answer[:300] if final_answer else None
+                                    },
+                                    "timestamp": int(__import__('time').time() * 1000)
+                                }) + '\n')
+                            # #endregion
+
                             # 🎯 解析 Thought 和 Response（复刻自 sophia-pro）
                             thought_part, response_part = parse_thought_response(final_answer)
                             logger.info(f"[FINISHED 解析] thought={thought_part[:50] if thought_part else None}... response={response_part[:50] if response_part else None}...")
 
+                            # #region debug log
+                            with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                f.write(json.dumps({
+                                    "sessionId": "debug-session",
+                                    "runId": "run1",
+                                    "hypothesisId": "D",
+                                    "location": "agent_stream.py:execute:FINISHED_AFTER_PARSE",
+                                    "message": "after parse_thought_response in FINISHED state",
+                                    "data": {
+                                        "thought_part_found": thought_part is not None,
+                                        "response_part_found": response_part is not None,
+                                        "thought_part_length": len(thought_part) if thought_part else 0,
+                                        "response_part_length": len(response_part) if response_part else 0
+                                    },
+                                    "timestamp": int(__import__('time').time() * 1000)
+                                }) + '\n')
+                            # #endregion
+
                             # 先发送 Thought（如果有）
                             if thought_part:
                                 logger.info(f"[Thought Process] {thought_part[:100]}...")
+                                # #region debug log
+                                with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                    f.write(json.dumps({
+                                        "sessionId": "debug-session",
+                                        "runId": "run1",
+                                        "hypothesisId": "D",
+                                        "location": "agent_stream.py:execute:YIELD_THOUGHT",
+                                        "message": "yielding ThoughtEvent",
+                                        "data": {
+                                            "thought_length": len(thought_part),
+                                            "thought_preview": thought_part[:100]
+                                        },
+                                        "timestamp": int(__import__('time').time() * 1000)
+                                    }) + '\n')
+                                # #endregion
                                 yield ThoughtEvent(
                                     thought=thought_part,
                                     session_id=self._session_id,
                                 )
+                            else:
+                                # #region debug log
+                                with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                    f.write(json.dumps({
+                                        "sessionId": "debug-session",
+                                        "runId": "run1",
+                                        "hypothesisId": "D",
+                                        "location": "agent_stream.py:execute:NO_THOUGHT",
+                                        "message": "thought_part is None, not yielding ThoughtEvent",
+                                        "data": {},
+                                        "timestamp": int(__import__('time').time() * 1000)
+                                    }) + '\n')
+                                # #endregion
 
                             # 再发送 Response
                             final_content = response_part if response_part else final_answer
@@ -280,8 +447,44 @@ class AgentStream:
 
                                 # 🎯 解析 Thought 和 Response 格式（复刻自 sophia-pro）
                                 logger.info(f"[解析前] 原始内容: {msg.content[:150]}...")
+
+                                # #region debug log
+                                import json
+                                with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                    f.write(json.dumps({
+                                        "sessionId": "debug-session",
+                                        "runId": "run1",
+                                        "hypothesisId": "D",
+                                        "location": "agent_stream.py:execute:LOOP_BEFORE_PARSE",
+                                        "message": "before parse_thought_response in message loop",
+                                        "data": {
+                                            "msg_content_length": len(msg.content) if msg.content else 0,
+                                            "msg_content_preview": msg.content[:300] if msg.content else None
+                                        },
+                                        "timestamp": int(__import__('time').time() * 1000)
+                                    }) + '\n')
+                                # #endregion
+
                                 thought_part, response_part = parse_thought_response(msg.content)
                                 logger.info(f"[解析后] thought={thought_part[:50] if thought_part else None}... response={response_part[:50] if response_part else None}...")
+
+                                # #region debug log
+                                with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                    f.write(json.dumps({
+                                        "sessionId": "debug-session",
+                                        "runId": "run1",
+                                        "hypothesisId": "D",
+                                        "location": "agent_stream.py:execute:LOOP_AFTER_PARSE",
+                                        "message": "after parse_thought_response in message loop",
+                                        "data": {
+                                            "thought_part_found": thought_part is not None,
+                                            "response_part_found": response_part is not None,
+                                            "thought_part_length": len(thought_part) if thought_part else 0,
+                                            "response_part_length": len(response_part) if response_part else 0
+                                        },
+                                        "timestamp": int(__import__('time').time() * 1000)
+                                    }) + '\n')
+                                # #endregion
 
                                 # 判断是否是分析结果回复
                                 check_content = response_part or msg.content
@@ -293,10 +496,38 @@ class AgentStream:
                                 # 先发送 Thought（如果有）
                                 if thought_part:
                                     logger.info(f"[Thought Process] {thought_part[:100]}...")
+                                    # #region debug log
+                                    with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                        f.write(json.dumps({
+                                            "sessionId": "debug-session",
+                                            "runId": "run1",
+                                            "hypothesisId": "D",
+                                            "location": "agent_stream.py:execute:LOOP_YIELD_THOUGHT",
+                                            "message": "yielding ThoughtEvent in message loop",
+                                            "data": {
+                                                "thought_length": len(thought_part),
+                                                "thought_preview": thought_part[:100]
+                                            },
+                                            "timestamp": int(__import__('time').time() * 1000)
+                                        }) + '\n')
+                                    # #endregion
                                     yield ThoughtEvent(
                                         thought=thought_part,
                                         session_id=self._session_id,
                                     )
+                                else:
+                                    # #region debug log
+                                    with open('/Users/wy770/AI/.cursor/debug.log', 'a') as f:
+                                        f.write(json.dumps({
+                                            "sessionId": "debug-session",
+                                            "runId": "run1",
+                                            "hypothesisId": "D",
+                                            "location": "agent_stream.py:execute:LOOP_NO_THOUGHT",
+                                            "message": "thought_part is None in message loop, not yielding ThoughtEvent",
+                                            "data": {},
+                                            "timestamp": int(__import__('time').time() * 1000)
+                                        }) + '\n')
+                                    # #endregion
 
                                 # 再发送 Response/Answer
                                 if response_part:
