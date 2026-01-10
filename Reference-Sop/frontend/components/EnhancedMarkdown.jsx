@@ -1,6 +1,6 @@
 /**
  * EnhancedMarkdown 组件 - 增强的 Markdown 渲染
- * 
+ *
  * 复刻自 sophia-pro 项目的 Markdown 渲染功能，支持：
  * - 代码高亮
  * - 表格
@@ -16,7 +16,7 @@ import remarkBreaks from 'remark-breaks';
 
 /**
  * EnhancedMarkdown 组件
- * 
+ *
  * @param {Object} props
  * @param {string} props.children - Markdown 文本内容
  * @param {string} props.className - CSS 类名
@@ -58,7 +58,7 @@ export default function EnhancedMarkdown({ children, className = '' }) {
           code: ({ node, inline, className, children, ...props }) => {
             const match = /language-(\w+)/.exec(className || '');
             const isInline = inline || !match;
-            
+
             if (isInline) {
               return (
                 <code className="bg-gray-200 rounded-sm px-1 font-mono text-sm" {...props}>
@@ -66,7 +66,7 @@ export default function EnhancedMarkdown({ children, className = '' }) {
                 </code>
               );
             }
-            
+
             return (
               <code className={className} {...props}>
                 {children}
@@ -80,6 +80,8 @@ export default function EnhancedMarkdown({ children, className = '' }) {
     </div>
   );
 }
+
+
 
 
 

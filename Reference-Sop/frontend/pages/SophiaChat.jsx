@@ -1,6 +1,6 @@
 /**
  * SophiaChat - 复刻 sophia-pro 风格的对话页面
- * 
+ *
  * 功能：
  * - 意图识别（通过提示词规则）
  * - Thought Process 显示
@@ -30,7 +30,7 @@ const CASUAL_KEYWORDS = ['谢谢', 'thanks', '再见', 'bye', '怎么样'];
 
 function detectIntent(message) {
   const lower = message.toLowerCase();
-  
+
   for (const kw of GREETING_KEYWORDS) {
     if (lower.includes(kw.toLowerCase())) {
       return {
@@ -39,7 +39,7 @@ function detectIntent(message) {
       };
     }
   }
-  
+
   for (const kw of CASUAL_KEYWORDS) {
     if (lower.includes(kw.toLowerCase())) {
       return {
@@ -48,7 +48,7 @@ function detectIntent(message) {
       };
     }
   }
-  
+
   return {
     type: 'task_oriented',
     reasoning: `这是一个任务导向的请求,需要进行需求分析和任务规划。`
@@ -64,18 +64,18 @@ function useTypewriter(text, speed = 30, enabled = true) {
   const [isComplete, setIsComplete] = useState(false);
   const indexRef = useRef(0);
   const animationRef = useRef(null);
-  
+
   useEffect(() => {
     if (!enabled || !text) {
       setDisplayedText(text || '');
       setIsComplete(true);
       return;
     }
-    
+
     setDisplayedText('');
     setIsComplete(false);
     indexRef.current = 0;
-    
+
     const animate = () => {
       if (indexRef.current < text.length) {
         const chunkSize = Math.max(1, Math.floor(speed / 10));
@@ -87,12 +87,12 @@ function useTypewriter(text, speed = 30, enabled = true) {
         setIsComplete(true);
       }
     };
-    
+
     // 延迟启动动画
     const timer = setTimeout(() => {
       animationRef.current = requestAnimationFrame(animate);
     }, 100);
-    
+
     return () => {
       clearTimeout(timer);
       if (animationRef.current) {
@@ -100,7 +100,7 @@ function useTypewriter(text, speed = 30, enabled = true) {
       }
     };
   }, [text, speed, enabled]);
-  
+
   return { displayedText, isComplete };
 }
 
@@ -110,16 +110,16 @@ function useTypewriter(text, speed = 30, enabled = true) {
 
 function ThoughtProcess({ content, isStreaming }) {
   const [expanded, setExpanded] = useState(true);
-  
+
   if (!content) return null;
-  
+
   return (
     <div className="thought-process mb-4">
-      <div 
+      <div
         className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl overflow-hidden"
         style={{ boxShadow: '0 2px 8px rgba(251, 191, 36, 0.1)' }}
       >
-        <div 
+        <div
           className="px-4 py-3 cursor-pointer flex items-center justify-between"
           onClick={() => setExpanded(!expanded)}
         >
@@ -136,16 +136,16 @@ function ThoughtProcess({ content, isStreaming }) {
               </div>
             )}
           </div>
-          <svg 
-            className={`w-4 h-4 text-amber-500 transition-transform ${expanded ? 'rotate-180' : ''}`} 
-            fill="none" 
-            stroke="currentColor" 
+          <svg
+            className={`w-4 h-4 text-amber-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
             viewBox="0 0 24 24"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-        
+
         {expanded && (
           <div className="px-4 pb-4 border-t border-amber-100">
             <p className="text-sm text-amber-800 leading-relaxed pt-3">
@@ -164,17 +164,17 @@ function ThoughtProcess({ content, isStreaming }) {
 
 function Message({ message, isLatest }) {
   const { displayedText, isComplete } = useTypewriter(
-    message.content, 
-    40, 
+    message.content,
+    40,
     message.role === 'assistant' && isLatest
   );
-  
+
   if (message.role === 'user') {
     return (
       <div className="flex justify-end mb-4">
-        <div 
+        <div
           className="max-w-[70%] px-4 py-3 rounded-2xl rounded-tr-sm text-white"
-          style={{ 
+          style={{
             background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
             boxShadow: '0 2px 10px rgba(249, 115, 22, 0.3)'
           }}
@@ -184,18 +184,18 @@ function Message({ message, isLatest }) {
       </div>
     );
   }
-  
+
   // Assistant message with Markdown
   return (
     <div className="flex justify-start mb-4">
       <div className="flex gap-3 max-w-[85%]">
-        <div 
+        <div
           className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
           style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}
         >
           <span className="text-white text-sm">✨</span>
         </div>
-        <div 
+        <div
           className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100"
           style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
         >
@@ -236,7 +236,7 @@ export default function SophiaChat() {
   const [ws, setWs] = useState(null);
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
-  
+
   // WebSocket 连接
   useEffect(() => {
     connectWebSocket();
@@ -246,26 +246,26 @@ export default function SophiaChat() {
       }
     };
   }, []);
-  
+
   // 自动滚动
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, thoughtContent]);
-  
+
   const connectWebSocket = () => {
     const wsUrl = WS_CONFIG.getUrl();
     console.log('Connecting to', wsUrl);
     setStatus('connecting');
-    
+
     const socket = new WebSocket(wsUrl);
-    
+
     socket.onopen = () => {
       console.log('Connected');
       setStatus('idle');
       setWs(socket);
       wsRef.current = socket;
     };
-    
+
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -274,11 +274,11 @@ export default function SophiaChat() {
         console.error('Parse error:', e);
       }
     };
-    
+
     socket.onerror = () => {
       setStatus('disconnected');
     };
-    
+
     socket.onclose = () => {
       setStatus('disconnected');
       setWs(null);
@@ -286,12 +286,12 @@ export default function SophiaChat() {
       setTimeout(connectWebSocket, 3000);
     };
   };
-  
+
   const handleMessage = (data) => {
     if (data.type === 'thought') {
       setThoughtContent(prev => prev + (data.content || ''));
     }
-    
+
     if (data.type === 'answer') {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -301,7 +301,7 @@ export default function SophiaChat() {
       setIsThinking(false);
       setStatus('idle');
     }
-    
+
     if (data.type === 'status') {
       if (data.content === 'processing') {
         setStatus('processing');
@@ -310,27 +310,27 @@ export default function SophiaChat() {
         setIsThinking(false);
       }
     }
-    
+
     if (data.type === 'error') {
       setStatus('idle');
       setIsThinking(false);
     }
   };
-  
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!input.trim() || status === 'processing') return;
-    
+
     const userMessage = input.trim();
-    
+
     // 添加用户消息
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    
+
     // 意图识别并显示 Thought Process
     const intent = detectIntent(userMessage);
     setThoughtContent(intent.reasoning);
     setIsThinking(true);
-    
+
     // 发送到后端
     const currentWs = wsRef.current || ws;
     if (currentWs && currentWs.readyState === WebSocket.OPEN) {
@@ -339,17 +339,17 @@ export default function SophiaChat() {
       setInput('');
     }
   };
-  
+
   return (
-    <div 
+    <div
       className="min-h-screen flex flex-col"
-      style={{ 
+      style={{
         background: 'linear-gradient(180deg, #FFF7ED 0%, #FFEDD5 50%, #FFF7ED 100%)'
       }}
     >
       {/* Header */}
       <header className="py-8 text-center">
-        <h1 
+        <h1
           className="text-4xl font-bold mb-2"
           style={{ color: '#1a1a1a' }}
         >
@@ -359,7 +359,7 @@ export default function SophiaChat() {
           Powered by SophiaPro AI
         </p>
       </header>
-      
+
       {/* Main Content */}
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 pb-32">
         {/* Messages */}
@@ -375,28 +375,28 @@ export default function SophiaChat() {
               </p>
             </div>
           )}
-          
+
           {messages.map((msg, idx) => (
-            <Message 
-              key={idx} 
-              message={msg} 
+            <Message
+              key={idx}
+              message={msg}
               isLatest={idx === messages.length - 1 && msg.role === 'assistant'}
             />
           ))}
-          
+
           {/* Thought Process */}
           {isThinking && thoughtContent && (
-            <ThoughtProcess 
-              content={thoughtContent} 
+            <ThoughtProcess
+              content={thoughtContent}
               isStreaming={status === 'processing'}
             />
           )}
-          
+
           {/* Loading indicator */}
           {status === 'processing' && !thoughtContent && (
             <div className="flex justify-start mb-4">
               <div className="flex gap-3">
-                <div 
+                <div
                   className="w-8 h-8 rounded-full flex items-center justify-center"
                   style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' }}
                 >
@@ -412,17 +412,17 @@ export default function SophiaChat() {
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </main>
-      
+
       {/* Input Area - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-orange-50 to-transparent pt-8 pb-6">
         <div className="max-w-3xl mx-auto px-4">
           {/* Input Box */}
           <form onSubmit={handleSubmit}>
-            <div 
+            <div
               className="bg-white rounded-2xl border border-gray-200 overflow-hidden"
               style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
             >
@@ -439,18 +439,18 @@ export default function SophiaChat() {
                   type="submit"
                   disabled={!input.trim() || status === 'processing'}
                   className="ml-3 px-4 py-2 rounded-xl text-white font-medium transition-all disabled:opacity-50"
-                  style={{ 
+                  style={{
                     background: input.trim() ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)' : '#ccc',
                   }}
                 >
                   发送
                 </button>
               </div>
-              
+
               {/* Tags */}
               <div className="px-4 pb-3 flex gap-2 flex-wrap">
                 {['Influencer Marketing', 'GEO', 'Social Listening', 'AI Writing'].map((tag, idx) => (
-                  <span 
+                  <span
                     key={tag}
                     className="px-3 py-1 rounded-full text-xs border cursor-pointer hover:bg-gray-50 transition-colors flex items-center gap-1"
                     style={{ borderColor: '#e5e7eb', color: '#6b7280' }}
@@ -462,11 +462,11 @@ export default function SophiaChat() {
               </div>
             </div>
           </form>
-          
+
           {/* Status */}
           <div className="text-center mt-3">
             <span className={`inline-flex items-center gap-1 text-xs ${
-              status === 'idle' ? 'text-green-600' : 
+              status === 'idle' ? 'text-green-600' :
               status === 'processing' ? 'text-orange-600' : 'text-red-600'
             }`}>
               <span className={`w-1.5 h-1.5 rounded-full ${
@@ -476,7 +476,7 @@ export default function SophiaChat() {
               {status === 'idle' ? '就绪' : status === 'processing' ? '思考中...' : '未连接'}
             </span>
           </div>
-          
+
           <p className="text-center text-gray-400 text-xs mt-2">
             Dive deeper with dedicated apps for advanced work
           </p>
@@ -485,6 +485,8 @@ export default function SophiaChat() {
     </div>
   );
 }
+
+
 
 
 

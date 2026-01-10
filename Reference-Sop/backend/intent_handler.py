@@ -24,22 +24,22 @@ async def handle_intent_recognition(
     connection_manager: ConnectionManager,
 ) -> Dict[str, Any]:
     """处理意图识别
-    
+
     Args:
         user_message: 用户输入的消息
         client_id: WebSocket 客户端 ID
         connection_manager: WebSocket 连接管理器
-        
+
     Returns:
         Dict: 意图识别结果
     """
     try:
         # 获取意图分类器
         classifier = get_intent_classifier()
-        
+
         # 进行意图识别
         result = classifier.classify(user_message)
-        
+
         # 构建思考过程文本（用于 Thought Process 显示）
         reasoning_text = f"""这是一个{result.intent_type.value}类型的请求，置信度：{result.confidence:.2f}。
 
@@ -50,7 +50,7 @@ async def handle_intent_recognition(
 - 应该用中文回复，因为用户用中文提问
 
 推理过程：{result.reasoning}"""
-        
+
         # 发送意图识别结果到前端
         await connection_manager.send_to_client(
             client_id,
@@ -61,9 +61,9 @@ async def handle_intent_recognition(
                 "reasoning": reasoning_text,
             }
         )
-        
+
         logger.info(f"Intent recognized: {result.intent_type.value} (confidence: {result.confidence:.2f})")
-        
+
         return {
             "intent_type": result.intent_type.value,
             "confidence": result.confidence,
@@ -82,10 +82,10 @@ async def handle_intent_recognition(
 
 def should_use_casual_response(intent_result: Dict[str, Any]) -> bool:
     """判断是否应该使用简单对话响应方式
-    
+
     Args:
         intent_result: 意图识别结果
-        
+
     Returns:
         bool: 如果是问候或简单对话返回 True
     """

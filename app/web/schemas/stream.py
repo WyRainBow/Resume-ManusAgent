@@ -74,3 +74,5 @@ class HeartbeatEvent(BaseModel):
         }
         return f"id: {self.id}\ndata: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
 
+
+

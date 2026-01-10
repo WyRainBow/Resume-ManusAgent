@@ -77,6 +77,9 @@ export function useTextStream({
   const completedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   const isPausedRef = useRef(false);
+  // 用于跟踪增量更新的 refs
+  const prevTextLengthRef = useRef(0);  // 之前的文本长度，用于检测增量更新
+  const fullTextRef = useRef('');       // 完整的目标文本，用于增量更新时的打字机效果
 
   useEffect(() => {
     speedRef.current = speed;
@@ -137,6 +140,8 @@ export function useTextStream({
     setIsComplete(false);
     completedRef.current = false;
     isPausedRef.current = false;
+    prevTextLengthRef.current = 0;
+    fullTextRef.current = '';
 
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
@@ -159,14 +164,24 @@ export function useTextStream({
     }
   }, [textStream]);
 
-  // 处理字符串的打字机效果
-  const processStringTypewriter = useCallback((text: string) => {
+  // 处理字符串的打字机效果（支持增量更新）
+  const processStringTypewriter = useCallback((text: string, isIncremental: boolean = false) => {
+    // 如果已经有动画在运行，增量更新时不要重新开始（让当前动画继续使用最新文本）
+    if (isIncremental && animationRef.current) {
+      // 更新目标文本，当前运行的 streamContent 会使用 fullTextRef.current
+      return;
+    }
+
     let lastFrameTime = 0;
 
     const streamContent = (timestamp: number) => {
       if (isPausedRef.current) {
         return;
       }
+
+      // 使用最新的文本（支持动态变化）
+      // 如果是增量更新，始终使用 fullTextRef.current，否则使用传入的 text
+      const currentText = isIncremental ? fullTextRef.current : text;
 
       const delay = getProcessingDelay();
       if (delay > 0 && timestamp - lastFrameTime < delay) {
@@ -175,17 +190,29 @@ export function useTextStream({
       }
       lastFrameTime = timestamp;
 
-      if (currentIndexRef.current >= text.length) {
+      // 如果当前索引已经达到或超过文本长度
+      if (currentIndexRef.current >= currentText.length) {
+        // 如果是增量更新，检查是否有新内容
+        if (isIncremental) {
+          const latestText = fullTextRef.current;
+          if (latestText.length > currentIndexRef.current) {
+            // 有新内容，继续打字（使用最新文本）
+            animationRef.current = requestAnimationFrame(streamContent);
+            return;
+          }
+        }
+        // 没有新内容了，标记完成
         markComplete();
         return;
       }
 
+      // 继续打字
       const chunkSize = getChunkSize();
       const endIndex = Math.min(
         currentIndexRef.current + chunkSize,
-        text.length
+        currentText.length
       );
-      const newDisplayedText = text.slice(0, endIndex);
+      const newDisplayedText = currentText.slice(0, endIndex);
 
       setDisplayedText(newDisplayedText);
       if (modeRef.current === 'fade') {
@@ -194,13 +221,11 @@ export function useTextStream({
 
       currentIndexRef.current = endIndex;
 
-      if (endIndex < text.length) {
-        animationRef.current = requestAnimationFrame(streamContent);
-      } else {
-        markComplete();
-      }
+      // 继续下一帧
+      animationRef.current = requestAnimationFrame(streamContent);
     };
 
+    // 启动动画
     animationRef.current = requestAnimationFrame(streamContent);
   }, [getProcessingDelay, getChunkSize, updateSegments, markComplete]);
 
@@ -228,11 +253,57 @@ export function useTextStream({
   }, [updateSegments, markComplete]);
 
   const startStreaming = useCallback(() => {
-    reset();
-
     if (typeof textStream === 'string') {
-      processStringTypewriter(textStream);
+      // 检查是否是增量更新（流式传输）
+      // 增量更新：新长度 > 旧长度 且 旧长度 > 0
+      const isIncremental = textStream.length > prevTextLengthRef.current && prevTextLengthRef.current > 0;
+
+      // 更新目标文本
+      fullTextRef.current = textStream;
+
+      if (isIncremental) {
+        // 增量更新：只更新目标文本，继续打字机效果
+        // 如果还没有开始打字机效果，现在开始
+        if (!animationRef.current && !completedRef.current) {
+          processStringTypewriter(textStream, true);
+        }
+        // 如果打字机效果已经完成但文本还在增长，继续打字
+        if (completedRef.current && textStream.length > currentIndexRef.current) {
+          setIsComplete(false);
+          completedRef.current = false;
+          // 不要重置 currentIndexRef，继续从当前位置打字
+          if (!animationRef.current) {
+            processStringTypewriter(textStream, true);
+          }
+        }
+        // 更新长度记录
+        prevTextLengthRef.current = textStream.length;
+      } else {
+        // 全新文本：重置并开始打字机效果
+        if (textStream.length > 0 && prevTextLengthRef.current === 0) {
+          // 从空字符串变为有内容，重置并开始
+          reset();
+          processStringTypewriter(textStream, false);
+          prevTextLengthRef.current = textStream.length;
+        } else if (textStream.length === 0 && prevTextLengthRef.current > 0) {
+          // 从有内容变为空，可能是消息完成，不重置，让打字机效果继续完成
+          // 不执行任何操作，让打字机效果自然完成
+          prevTextLengthRef.current = 0;
+        } else if (textStream.length < prevTextLengthRef.current) {
+          // 文本变短：重置
+          reset();
+          prevTextLengthRef.current = textStream.length;
+        } else if (textStream.length === prevTextLengthRef.current && textStream.length > 0) {
+          // 文本长度不变但内容可能变了，需要重新开始（比如 canStartResponseTypewriter 从 false 变为 true）
+          reset();
+          processStringTypewriter(textStream, false);
+          prevTextLengthRef.current = textStream.length;
+        } else {
+          prevTextLengthRef.current = textStream.length;
+        }
+      }
     } else if (textStream) {
+      reset();
       processAsyncIterable(textStream);
     }
   }, [textStream, reset, processStringTypewriter, processAsyncIterable]);

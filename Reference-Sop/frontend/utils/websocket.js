@@ -1,6 +1,6 @@
 /**
  * WebSocket 工具函数
- * 
+ *
  * 用于管理 WebSocket 连接和消息处理
  */
 
@@ -126,6 +126,8 @@ export class WebSocketManager {
     return this.ws ? this.ws.readyState : WebSocket.CLOSED;
   }
 }
+
+
 
 
 
