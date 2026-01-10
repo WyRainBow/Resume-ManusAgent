@@ -3,10 +3,12 @@
  *
  * 完全复刻自 sophia-pro 项目的 ThinkingMessage 组件
  * 样式：灰色文字、可折叠、简洁风格
+ * 支持打字机效果
  */
 
 import { useState, useEffect } from 'react';
 import { ChevronUp } from 'lucide-react';
+import { useTextStream } from './ResponseStream';
 
 /**
  * ThoughtProcess 组件的 Props
@@ -22,6 +24,8 @@ export interface ThoughtProcessProps {
     isLatest?: boolean;
     /** CSS 类名 */
     className?: string;
+    /** 打字机效果完成时的回调 */
+    onComplete?: () => void;
 }
 
 /**
@@ -41,6 +45,7 @@ export default function ThoughtProcess({
     defaultExpanded = true,
     isLatest,
     className = '',
+    onComplete,
 }: ThoughtProcessProps) {
     // 如果传入了 isLatest，则使用 isLatest 来决定初始状态，否则使用 defaultExpanded
     const [expanded, setExpanded] = useState(
@@ -58,6 +63,24 @@ export default function ThoughtProcess({
     if (!content || !content.trim()) {
         return null;
     }
+
+    // 流式传输时使用打字机效果，非流式传输时直接显示
+    const shouldUseTypewriter = isLatest && isStreaming;
+    const { displayedText, isComplete } = useTextStream({
+        textStream: shouldUseTypewriter ? content : '',
+        speed: 15, // 与 response 相同的速度
+        mode: 'typewriter',
+        onComplete: () => {
+            // 打字机效果完成时，通知父组件
+            if (shouldUseTypewriter && onComplete) {
+                console.log('[ThoughtProcess] 打字机效果完成');
+                onComplete();
+            }
+        },
+    });
+
+    // 流式传输时使用打字机效果显示，否则直接显示完整内容
+    const textToShow = shouldUseTypewriter ? displayedText : content;
 
     const triggerText = 'Thought Process';
 
@@ -87,7 +110,10 @@ export default function ThoughtProcess({
             {/* Content - 复刻 sophia-pro 样式：灰色文字，无背景 */}
             {expanded && (
                 <div className="text-neutral-500 text-sm leading-relaxed pl-0 font-normal">
-                    {content}
+                    {textToShow}
+                    {shouldUseTypewriter && !isComplete && (
+                        <span className="inline-block w-0.5 h-3 bg-neutral-400 animate-pulse ml-0.5" />
+                    )}
                 </div>
             )}
         </div>

@@ -14,5 +14,6 @@ export interface ChatMessageProps {
   message: Message;
   isLatest?: boolean;
   isStreaming?: boolean;
+  onTypewriterComplete?: () => void;
 }
 

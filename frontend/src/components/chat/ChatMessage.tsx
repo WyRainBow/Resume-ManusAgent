@@ -5,7 +5,7 @@
  * 支持用户消息和助手消息，包含 Thought Process 和 Markdown 渲染
  */
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessageProps } from '@/types/chat';
 import ThoughtProcess from './ThoughtProcess';
 import EnhancedMarkdown from './EnhancedMarkdown';
@@ -33,7 +33,36 @@ import { useTextStream } from './ResponseStream';
  * />
  * ```
  */
-export default function ChatMessage({ message, isLatest = false, isStreaming = false }: ChatMessageProps) {
+export default function ChatMessage({ message, isLatest = false, isStreaming = false, onTypewriterComplete }: ChatMessageProps) {
+  // 跟踪 thought process 是否完成
+  const [thoughtProcessComplete, setThoughtProcessComplete] = useState(false);
+  const thoughtProcessStartedRef = useRef(false);
+
+  // 如果有 thought process，需要等待它完成
+  const hasThoughtProcess = message.thought && message.thought.trim().length > 0;
+
+  // 当 thought process 内容变化时，重置完成状态
+  useEffect(() => {
+    if (hasThoughtProcess && isLatest && isStreaming) {
+      // 如果 thought process 内容变化，重置状态
+      if (message.thought && message.thought.trim().length > 0) {
+        thoughtProcessStartedRef.current = true;
+        setThoughtProcessComplete(false);
+      }
+    } else if (!isLatest || !isStreaming) {
+      // 如果不是最新消息或不在流式输出，重置状态
+      thoughtProcessStartedRef.current = false;
+      setThoughtProcessComplete(false);
+    }
+  }, [message.thought, isLatest, isStreaming, hasThoughtProcess]);
+
+  // 如果没有 thought process，直接标记为完成，允许 response 开始
+  useEffect(() => {
+    if (!hasThoughtProcess && isLatest && isStreaming) {
+      setThoughtProcessComplete(true);
+    }
+  }, [hasThoughtProcess, isLatest, isStreaming]);
+
   if (message.role === 'user') {
     return (
       <div className="flex justify-end mb-6">
@@ -50,14 +79,26 @@ export default function ChatMessage({ message, isLatest = false, isStreaming = f
   }
 
   // Assistant 消息
+  // 流式传输时使用打字机效果，非流式传输时直接显示
+  // 如果有 thought process，需要等待它完成后再开始 response 的打字机效果
   const shouldUseTypewriter = message.role === 'assistant' && isLatest && isStreaming;
+  const canStartResponseTypewriter = shouldUseTypewriter && (!hasThoughtProcess || thoughtProcessComplete);
+
   const { displayedText, isComplete } = useTextStream({
-    textStream: shouldUseTypewriter ? message.content : '',
-    speed: 20,
+    textStream: canStartResponseTypewriter ? message.content : '',
+    speed: 15, // 降低速度，让打字机效果更明显
     mode: 'typewriter',
+    onComplete: () => {
+      // 打字机效果完成时，通知父组件
+      if (canStartResponseTypewriter && onTypewriterComplete) {
+        onTypewriterComplete();
+      }
+    },
   });
 
-  const textToShow = shouldUseTypewriter ? displayedText : message.content;
+  // 流式传输时使用打字机效果显示，否则直接显示完整内容
+  // 如果 thought process 还没完成，不显示 response 内容
+  const textToShow = canStartResponseTypewriter ? displayedText : (shouldUseTypewriter ? '' : message.content);
 
   return (
     <div className="mb-6">
@@ -65,17 +106,23 @@ export default function ChatMessage({ message, isLatest = false, isStreaming = f
       {message.thought && (
         <ThoughtProcess
           content={message.thought}
-          isStreaming={isLatest && isStreaming && !message.content}
+          isStreaming={isLatest && isStreaming && !thoughtProcessComplete}
           isLatest={isLatest}
           defaultExpanded={true}
+          onComplete={() => {
+            // Thought process 打字机效果完成，允许 response 开始
+            console.log('[ChatMessage] Thought Process 打字机效果完成，允许 Response 开始');
+            setThoughtProcessComplete(true);
+          }}
         />
       )}
 
       {/* Response 内容 */}
-      {textToShow && (
+      {/* 关键：如果有 thought process，必须等待它完成后再显示 response */}
+      {(!hasThoughtProcess || thoughtProcessComplete || !isStreaming) && textToShow && (
         <div className="text-gray-800">
           <EnhancedMarkdown>{textToShow}</EnhancedMarkdown>
-          {shouldUseTypewriter && !isComplete && (
+          {canStartResponseTypewriter && !isComplete && (
             <span className="inline-block w-0.5 h-4 bg-gray-400 animate-pulse ml-0.5" />
           )}
         </div>
