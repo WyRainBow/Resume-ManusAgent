@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronUp } from 'lucide-react';
-import { useTextStream } from './ResponseStream';
+import { useTextStream } from '@/hooks/useTextStream';
 
 /**
  * ThoughtProcess 组件的 Props
