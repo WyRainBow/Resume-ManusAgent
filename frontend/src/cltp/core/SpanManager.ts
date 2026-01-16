@@ -5,7 +5,7 @@
  * 不维护状态 - 将所有状态管理委托给 StateManager
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from './EventEmitter';
 import type { CLChunk, SpanCLChunk } from '../types/chunks';
 import type { SpanMessage } from '../types/messages';
 import type { SpanNode } from '../types/session';
@@ -20,7 +20,7 @@ export interface SpanProcessingResult {
   spanNode: SpanNode;
 }
 
-export class SpanManager extends EventEmitter {
+export class SpanManager extends EventEmitter<Record<string, (...args: any[]) => void>> {
   private stateUpdater: StateUpdater;
   private stateQuery: StateQuery;
   private errorHandler: ErrorHandler;
@@ -36,6 +36,7 @@ export class SpanManager extends EventEmitter {
     this.stateUpdater = stateUpdater;
     this.stateQuery = stateQuery;
     this.errorHandler = errorHandler;
+    this.reportedNestingWarnings = new Set();
   }
 
   /**

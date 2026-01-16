@@ -125,6 +125,16 @@ export class ChunkProcessorImpl<
   private async processSpanChunk(chunk: SpanCLChunk): Promise<void> {
     await this.spanManager.processChunk(chunk);
     this.eventEmitter.emit('chunk:span', chunk);
+
+    // Emit high-level span events for consumers (e.g., UI processing state)
+    const spanMessage = this.stateQuery.getMessage(chunk.id) as any;
+    if (spanMessage) {
+      if (chunk.status === 'start') {
+        this.eventEmitter.emit('span:start', spanMessage);
+      } else if (chunk.status === 'end') {
+        this.eventEmitter.emit('span:end', spanMessage);
+      }
+    }
   }
 
   /**

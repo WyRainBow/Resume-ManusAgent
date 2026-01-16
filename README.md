@@ -35,7 +35,7 @@
 ## 🏗️ 技术架构
 
 ### 后端技术栈
-- **框架**：FastAPI + WebSocket
+- **框架**：FastAPI + SSE（CLTP 兼容）
 - **AI 框架**：基于 OpenManus 的 Agent 系统
 - **LLM 支持**：OpenAI、Azure OpenAI、Anthropic、Google 等
 - **记忆系统**：LangChain Memory（ChatHistoryManager、ConversationStateManager）
@@ -146,8 +146,8 @@ cd frontend
 npm run dev
 ```
 
-前端服务将在 `http://localhost:5173` 启动。
+前端服务将在 `http://localhost:5174` 启动。
 
 ### 访问应用
 
-打开浏览器访问：`http://localhost:5173`
+打开浏览器访问：`http://localhost:5174`

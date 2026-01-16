@@ -25,8 +25,12 @@ export interface UseCLTPResult {
   isProcessing: boolean;
   /** 是否已连接 */
   isConnected: boolean;
+  /** 答案完成信号（用于触发 finalize） */
+  answerCompleteCount: number;
   /** 发送用户消息 */
   sendMessage: (message: string) => Promise<void>;
+  /** 完成当前流式消息并清理状态 */
+  finalizeStream: () => void;
   /** 断开连接 */
   disconnect: () => void;
 }
@@ -60,6 +64,10 @@ export function useCLTP(options: UseCLTPOptions = {}): UseCLTPResult {
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [answerCompleteCount, setAnswerCompleteCount] = useState(0);
+
+  const currentThoughtRef = useRef('');
+  const currentAnswerRef = useRef('');
 
   const sessionRef = useRef<CLTPSessionImpl<DefaultPayloads> | null>(null);
   const sseTransportRef = useRef<SSETransport | null>(null);
@@ -78,12 +86,16 @@ export function useCLTP(options: UseCLTPOptions = {}): UseCLTPResult {
       onDisconnect: () => {
         console.log('[useCLTP] SSE Disconnected');
         setIsConnected(false);
-        setIsProcessing(false);
+        if (!currentThoughtRef.current && !currentAnswerRef.current) {
+          setIsProcessing(false);
+        }
       },
       onError: (error) => {
         console.error('[useCLTP] SSE Error:', error);
         setIsConnected(false);
-        setIsProcessing(false);
+        if (!currentThoughtRef.current && !currentAnswerRef.current) {
+          setIsProcessing(false);
+        }
       },
     });
 
@@ -130,6 +142,7 @@ export function useCLTP(options: UseCLTPOptions = {}): UseCLTPResult {
         setCurrentThought(text);
       } else if (message.metadata.channel === 'plain') {
         setCurrentAnswer(text);
+        setAnswerCompleteCount((count) => count + 1);
       }
     });
 
@@ -158,6 +171,14 @@ export function useCLTP(options: UseCLTPOptions = {}): UseCLTPResult {
       });
     };
   }, [conversationId, baseUrl, heartbeatTimeout]);
+
+  useEffect(() => {
+    currentThoughtRef.current = currentThought;
+  }, [currentThought]);
+
+  useEffect(() => {
+    currentAnswerRef.current = currentAnswer;
+  }, [currentAnswer]);
 
   /**
    * Send user message
@@ -195,6 +216,15 @@ export function useCLTP(options: UseCLTPOptions = {}): UseCLTPResult {
   }, []);
 
   /**
+   * Finalize current stream (clear state and stop processing)
+   */
+  const finalizeStream = useCallback(() => {
+    setCurrentThought('');
+    setCurrentAnswer('');
+    setIsProcessing(false);
+  }, []);
+
+  /**
    * Disconnect
    */
   const disconnect = useCallback(() => {
@@ -215,7 +245,9 @@ export function useCLTP(options: UseCLTPOptions = {}): UseCLTPResult {
     currentAnswer,
     isProcessing,
     isConnected,
+    answerCompleteCount,
     sendMessage,
+    finalizeStream,
     disconnect,
   };
 }

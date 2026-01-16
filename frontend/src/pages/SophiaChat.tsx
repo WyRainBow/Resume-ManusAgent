@@ -14,8 +14,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowUp } from 'lucide-react';
 import ChatMessage from '@/components/chat/ChatMessage';
 import { Message } from '@/types/chat';
-import { SSETransport, SSEEvent, createSSETransport } from '@/transports/SSETransport';
-import { ConnectionStatus, normalizeSSEEvent, SSEMessage } from '@/types/transport';
+import { ConnectionStatus } from '@/types/transport';
+import { useCLTP } from '@/hooks/useCLTP';
 
 // ============================================================================
 // 配置
@@ -33,130 +33,49 @@ const SSE_CONFIG = {
 export default function SophiaChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<ConnectionStatus>('idle');
-  const [currentThought, setCurrentThought] = useState('');
-  const [currentAnswer, setCurrentAnswer] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
 
-  const transportRef = useRef<SSETransport | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isFinalizedRef = useRef(false);
   const shouldFinalizeRef = useRef(false); // 标记是否需要完成（等待打字机效果完成）
+  const conversationIdRef = useRef(`conv-${Date.now()}`);
+  const currentThoughtRef = useRef('');
+  const currentAnswerRef = useRef('');
 
-  // Initialize SSE transport
-  useEffect(() => {
-    const transport = createSSETransport({
-      baseUrl: SSE_CONFIG.BASE_URL,
-      heartbeatTimeout: SSE_CONFIG.HEARTBEAT_TIMEOUT,
-      onConnect: () => {
-        console.log('[SophiaChat] SSE Connected');
-      },
-      onDisconnect: () => {
-        console.log('[SophiaChat] SSE Disconnected');
-        // 不在 disconnect 时自动 finalize，让正常的完成流程处理
-        // 避免重复调用 finalizeMessage
-      },
-      onError: (error) => {
-        console.error('[SophiaChat] SSE Error:', error);
-        setStatus('idle');
-        setIsProcessing(false);
-      },
-    });
-
-    // Add message listener
-    transport.onMessage((event: SSEEvent) => {
-      handleSSEEvent(event);
-    });
-
-    // Add error listener
-    transport.onError((error: Error) => {
-      console.error('[SophiaChat] Transport error:', error);
-    });
-
-    transportRef.current = transport;
-
-    // Set initial status to ready
-    setStatus('idle');
-
-    return () => {
-      transport.disconnect();
-    };
-  }, []);
+  const {
+    currentThought,
+    currentAnswer,
+    isProcessing,
+    isConnected,
+    answerCompleteCount,
+    sendMessage,
+    finalizeStream,
+  } = useCLTP({
+    conversationId: conversationIdRef.current,
+    baseUrl: SSE_CONFIG.BASE_URL,
+    heartbeatTimeout: SSE_CONFIG.HEARTBEAT_TIMEOUT,
+  });
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, currentThought, currentAnswer]);
 
-  /**
-   * Handle SSE events from backend
-   */
-  const handleSSEEvent = useCallback((event: SSEEvent) => {
-    console.log('[SophiaChat] Received:', event.type, event);
+  useEffect(() => {
+    currentThoughtRef.current = currentThought;
+  }, [currentThought]);
 
-    // Convert to normalized format for compatibility
-    const normalized = normalizeSSEEvent(event as unknown as SSEMessage);
+  useEffect(() => {
+    currentAnswerRef.current = currentAnswer;
+  }, [currentAnswer]);
 
-    switch (normalized.type) {
-      case 'thought':
-        // Thought 事件通常是完整的，直接替换而不是追加（避免重复）
-        setCurrentThought(normalized.content || '');
-        break;
-
-      case 'answer':
-        setCurrentAnswer(prev => {
-          // 如果是完整的 answer 事件，直接替换而不是追加（避免重复）
-          // 否则追加内容（流式传输）
-          const newAnswer = normalized.is_complete
-            ? (normalized.content || '')
-            : (prev + (normalized.content || ''));
-
-          // 如果 answer 事件标记为完成，标记需要完成
-          // 但不立即调用 finalizeMessage，等待打字机效果完成
-          if (normalized.is_complete) {
-            shouldFinalizeRef.current = true;
-            // 添加超时保护：如果打字机效果没有开始或完成，在合理时间后强制完成
-            // 根据内容长度计算超时时间（每100字符1秒，最少5秒，最多15秒）
-            const timeout = Math.min(15000, Math.max(5000, (newAnswer.length / 100) * 1000));
-            setTimeout(() => {
-              if (shouldFinalizeRef.current && !isFinalizedRef.current) {
-                console.log('[SophiaChat] 打字机效果超时，强制完成消息');
-                shouldFinalizeRef.current = false;
-                finalizeMessage();
-              }
-            }, timeout);
-          }
-          return newAnswer;
-        });
-        break;
-
-      case 'status':
-        if (normalized.content === 'processing') {
-          setIsProcessing(true);
-          setStatus('processing');
-        } else if (normalized.content === 'complete' || normalized.content === 'stopped') {
-          // 标记需要完成，等待打字机效果完成
-          shouldFinalizeRef.current = true;
-        }
-        break;
-
-      case 'agent_end':
-        // Agent 执行结束，标记需要完成，等待打字机效果完成
-        shouldFinalizeRef.current = true;
-        break;
-
-      case 'agent_start':
-      case 'system':
-        // 这些事件不需要特殊处理，只是记录
-        break;
-
-      case 'error':
-        console.error('[SophiaChat] Agent error:', normalized.content);
-        setIsProcessing(false);
-        setStatus('idle');
-        break;
+  useEffect(() => {
+    if (!isConnected) {
+      setStatus('connecting');
+      return;
     }
-  }, []);
+    setStatus(isProcessing ? 'processing' : 'idle');
+  }, [isConnected, isProcessing]);
 
   /**
    * Finalize current message and add to history
@@ -170,57 +89,45 @@ export default function SophiaChat() {
 
     isFinalizedRef.current = true;
 
-    // 使用函数式更新获取最新状态值
-    setCurrentThought((prevThought) => {
-      const thought = prevThought.trim();
-      setCurrentAnswer((prevAnswer) => {
-        const answer = prevAnswer.trim();
+    const thought = currentThoughtRef.current.trim();
+    const answer = currentAnswerRef.current.trim();
 
-        // 检查是否有内容需要保存
-        if (!thought && !answer) {
-          // 没有内容，只重置状态，不添加到消息列表
-          console.log('[SophiaChat] No content to finalize, just resetting state');
-          setIsProcessing(false);
-          setStatus('idle');
-          // 延迟重置标志，允许下一次消息
-          setTimeout(() => {
-            isFinalizedRef.current = false;
-          }, 100);
-          return '';
-        }
+    if (!thought && !answer) {
+      console.log('[SophiaChat] No content to finalize, just resetting state');
+      finalizeStream();
+      setTimeout(() => {
+        isFinalizedRef.current = false;
+      }, 100);
+      return;
+    }
 
-        // 使用更唯一的 ID：时间戳 + 随机数
-        const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newMessage: Message = {
+      id: uniqueId,
+      role: 'assistant',
+      content: answer || '',
+      timestamp: new Date().toISOString(),
+    };
+    if (thought) {
+      newMessage.thought = thought;
+    }
 
-        // 添加到消息列表
-        // 确保至少有一个内容（thought 或 answer）
-        if (thought || answer) {
-          const newMessage: Message = {
-            id: uniqueId,
-            role: 'assistant',
-            content: answer || '',
-            timestamp: new Date().toISOString(),
-          };
-          if (thought) {
-            newMessage.thought = thought;
-          }
-          setMessages((prev) => [...prev, newMessage]);
-        }
+    setMessages((prev) => [...prev, newMessage]);
+    finalizeStream();
+    setTimeout(() => {
+      isFinalizedRef.current = false;
+    }, 100);
+  }, [finalizeStream]);
 
-        // 立即重置状态，避免重复显示
-        setIsProcessing(false);
-        setStatus('idle');
+  useEffect(() => {
+    if (answerCompleteCount === 0) return;
 
-        // 延迟重置标志，允许下一次消息
-        setTimeout(() => {
-          isFinalizedRef.current = false;
-        }, 100);
-
-        return '';
-      });
-      return '';
-    });
-  }, []);
+    shouldFinalizeRef.current = true;
+    // 交给打字机完成回调 finalize，避免中途强制完成导致跳变
+    if (!currentAnswerRef.current.trim() && !currentThoughtRef.current.trim()) {
+      finalizeMessage();
+    }
+  }, [answerCompleteCount, finalizeMessage]);
 
   /**
    * Send message to backend via SSE
@@ -240,24 +147,14 @@ export default function SophiaChat() {
       timestamp: new Date().toISOString(),
     }]);
 
-    // Reset state for new message
-    setCurrentThought('');
-    setCurrentAnswer('');
-    setIsProcessing(true);
-    setStatus('processing');
     isFinalizedRef.current = false;
     shouldFinalizeRef.current = false; // 重置完成标记
     setInput('');
 
-    // Send via SSE
-    if (transportRef.current) {
-      try {
-        await transportRef.current.send(userMessage);
-      } catch (error) {
-        console.error('[SophiaChat] Failed to send message:', error);
-        setIsProcessing(false);
-        setStatus('idle');
-      }
+    try {
+      await sendMessage(userMessage);
+    } catch (error) {
+      console.error('[SophiaChat] Failed to send message:', error);
     }
   };
 
@@ -266,9 +163,7 @@ export default function SophiaChat() {
    */
   const handleClearConversation = () => {
     setMessages([]);
-    setCurrentThought('');
-    setCurrentAnswer('');
-    transportRef.current?.clearConversation();
+    finalizeStream();
   };
 
   return (
@@ -305,7 +200,7 @@ export default function SophiaChat() {
               体验 Thought Process · 流式输出 · Markdown 渲染
             </p>
             <p className="text-gray-300 text-xs mt-4">
-              使用 SSE (Server-Sent Events) 传输
+              使用 SSE + CLTP 传输
             </p>
           </div>
         )}

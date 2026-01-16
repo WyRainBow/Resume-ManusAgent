@@ -1,6 +1,7 @@
 """Agent stream output handler.
 
-Handles streaming agent execution results to WebSocket clients.
+Handles streaming agent execution results to SSE clients.
+现已集成 CLTP chunks 的生成与兼容输出。
 使用与原始 server.py 相同的手动步骤循环逻辑。
 """
 
@@ -16,6 +17,10 @@ def parse_thought_response(content: str) -> Tuple[Optional[str], Optional[str]]:
     """
     解析 LLM 输出中的 Thought 和 Response 部分
     复刻自 sophia-pro 的输出格式解析
+
+    Deprecated: CLTP 已提供标准的 think/plain content chunks，
+    后续在完成前端迁移后移除此函数与相关调用。
+    TODO(cltp): 前端完全迁移后删除 parse_thought_response
 
     Returns:
         (thought, response) - 如果没有找到对应部分则为 None

@@ -3,6 +3,7 @@
 This module provides:
 - POST /stream: SSE endpoint for streaming agent responses
 - Heartbeat mechanism for keeping connection alive
+- CLTP chunks are generated server-side and adapted to SSE for compatibility
 """
 
 import asyncio

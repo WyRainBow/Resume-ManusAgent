@@ -271,7 +271,7 @@ export class SSETransportAdapter<Payloads extends Record<string, any> = DefaultP
    */
   private handleAnswer(event: SSEEvent, timestamp: string): void {
     const content = event.data?.content || '';
-    const isComplete = event.data?.is_complete || false;
+    const isComplete = event.data?.is_complete ?? true;
 
     // 关键：直接使用原始文本内容，不进行任何处理
     const messageId = this.getOrCreateMessageId('plain');
