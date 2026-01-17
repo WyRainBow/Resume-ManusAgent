@@ -22,6 +22,7 @@ try:
 except ImportError:
     INTENT_ENHANCER_AVAILABLE = False
     AgentIntentEnhancer = None
+    ToolCollection = None
 
 
 class ConversationState(str, Enum):
@@ -70,7 +71,13 @@ class ConversationStateManager:
     - 只负责状态机和意图识别
     """
 
-    def __init__(self, llm=None, tool_collection: Optional[ToolCollection] = None, use_enhanced_intent: bool = True):
+    def __init__(
+        self,
+        llm=None,
+        tool_collection: Optional[ToolCollection] = None,
+        use_enhanced_intent: bool = True,
+        session_id: Optional[str] = None,
+    ):
         """
         初始化对话状态管理器
 
@@ -78,18 +85,20 @@ class ConversationStateManager:
             llm: LLM 客户端实例，用于意图识别
             tool_collection: 工具集合（用于初始化工具注册表）
             use_enhanced_intent: 是否使用增强的意图识别系统（默认 True）
+            session_id: 会话 ID（用于隔离和日志）
         """
         self.context = ConversationContext()
         self.llm = llm
         self.use_enhanced_intent = use_enhanced_intent and INTENT_ENHANCER_AVAILABLE
-        
+        self.session_id = session_id or "default"
+
         # 初始化增强的意图识别系统
         self.intent_enhancer = None
         if self.use_enhanced_intent:
             try:
                 # 初始化工具注册表
                 registry = get_tool_registry(tool_collection)
-                
+
                 # 创建意图增强器
                 from app.services.intent.intent_classifier import IntentClassifier
                 classifier = IntentClassifier(
@@ -273,7 +282,7 @@ class ConversationStateManager:
                         "last_ai_message": last_ai_message,
                     }
                 )
-                
+
                 # 检查是否是问候
                 if intent_result and intent_result.intent_type.value == "greeting":
                     result = {
@@ -287,7 +296,7 @@ class ConversationStateManager:
                     }
                     self.context.state = ConversationState.GREETING
                     return result
-                
+
                 # 检查是否识别到工具
                 if intent_result and intent_result.matched_tools:
                     # 提取文件路径（如果是加载简历）
@@ -298,7 +307,7 @@ class ConversationStateManager:
                         file_path_match = re.search(r'加载简历\s*([^\s]+)', user_input)
                         if file_path_match:
                             tool_args["file_path"] = file_path_match.group(1)
-                    
+
                     result = {
                         "intent": Intent.LOAD_RESUME if tool_name == "cv_reader_agent" else Intent.UNKNOWN,
                         "tool": tool_name,
@@ -309,7 +318,7 @@ class ConversationStateManager:
                         "intent_result": intent_result,
                     }
                     return result
-                
+
                 # 未识别到特定工具，返回增强后的查询
                 result = {
                     "intent": Intent.UNKNOWN,
@@ -321,11 +330,11 @@ class ConversationStateManager:
                     "intent_result": intent_result,
                 }
                 return result
-                
+
             except Exception as e:
                 logger.warning(f"增强意图识别失败，回退到传统模式: {e}")
                 # 继续使用传统模式
-        
+
         # 传统模式（向后兼容）
         intent, info = await self.detect_intent(
             user_input=user_input,

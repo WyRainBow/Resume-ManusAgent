@@ -94,6 +94,8 @@ class BaseTool(ABC, BaseModel):
     name: str
     description: str
     parameters: Optional[dict] = None
+    session_id: Optional[str] = Field(default=None, exclude=True)
+    shared_state: Optional[Any] = Field(default=None, exclude=True)
     # _schemas: Dict[str, List[ToolSchema]] = {}
 
     class Config:

@@ -172,6 +172,7 @@ async def set_resume_data(data: dict):
 # 全局存储 CheckpointSaver 和 ChatHistory 实例
 _global_checkpoint_saver = None
 _global_chat_history = None
+_global_conversation_manager = None
 
 
 def get_checkpoint_saver():
@@ -188,7 +189,11 @@ def get_chat_history_sync():
     global _global_chat_history
     if _global_chat_history is None:
         from app.memory import ChatHistoryManager
-        _global_chat_history = ChatHistoryManager()
+        from app.cltp.storage.conversation_storage import FileConversationStorage
+        _global_chat_history = ChatHistoryManager(
+            session_id="default",
+            storage=FileConversationStorage(),
+        )
     return _global_chat_history
 
 

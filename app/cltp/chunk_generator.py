@@ -13,7 +13,11 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Literal
 
 from app.cltp.types import SpanCLChunk, ContentCLChunk, HeartbeatChunk, CLChunk, SpanName
-from app.cltp.session_state import get_or_create_session, SessionState
+from app.cltp.session_state import (
+    get_or_create_session,
+    SessionState,
+    save_session_state,
+)
 
 
 def generate_id() -> str:
@@ -62,6 +66,7 @@ class CLTPChunkGenerator:
         self._state.span_stack.append(span_id)
         if name == 'run':
             self._state.current_run_span_id = span_id
+        save_session_state(self._state)
 
         chunk = SpanCLChunk(
             type='span',
@@ -106,6 +111,7 @@ class CLTPChunkGenerator:
         if name == 'run' and self._state.current_run_span_id == span_id:
             self._state.current_run_span_id = None
             self._message_ids.clear()
+        save_session_state(self._state)
 
         metadata: Dict[str, Any] = {'name': name}
         if outcome:
@@ -171,6 +177,7 @@ class CLTPChunkGenerator:
                 'done': done,
             },
         )
+        save_session_state(self._state)
 
         return chunk
 
@@ -194,12 +201,14 @@ class CLTPChunkGenerator:
             self._message_ids[key] = generate_id()
             # 初始化 sequence
             self._state.message_sequence[channel] = 0
+            save_session_state(self._state)
         return self._message_ids[key]
 
     def _get_next_sequence(self, channel: str) -> int:
         """获取下一个 sequence 号"""
         current = self._state.message_sequence.get(channel, 0)
         self._state.message_sequence[channel] = current + 1
+        save_session_state(self._state)
         return current
 
     def get_current_run_span_id(self) -> Optional[str]:

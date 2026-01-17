@@ -92,7 +92,7 @@ Parameters:
             分析结果 + 优化建议示例（供 editor 工具使用）
         """
         # 获取简历数据
-        resume_data = ResumeDataStore.get_data()
+        resume_data = ResumeDataStore.get_data(self.session_id)
         if not resume_data:
             return self.fail_response(
                 "No resume data loaded. Please use cv_reader_agent tool first to read resume data."

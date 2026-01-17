@@ -68,7 +68,7 @@ Execute modifications immediately when user provides specific details.
 
         内部创建 CVEditor Agent 并运行它来处理编辑任务
         """
-        resume_data = ResumeDataStore.get_data()
+        resume_data = ResumeDataStore.get_data(self.session_id)
         if not resume_data:
             return ToolResult(
                 output="No resume data loaded. Please use cv_reader_agent tool first to read resume data."
@@ -89,7 +89,7 @@ Execute modifications immediately when user provides specific details.
 
             if result.get("success"):
                 # 同步更新 ResumeDataStore（因为 CVEditor 直接修改了传入的字典引用）
-                ResumeDataStore.set_data(resume_data)
+                ResumeDataStore.set_data(resume_data, session_id=self.session_id)
 
                 # 格式化成功消息
                 output = f"✅ {result.get('message', 'Edit completed')}"
@@ -136,7 +136,7 @@ Returns a hierarchical view of all resume fields."""
     async def execute(self) -> ToolResult:
         """获取简历结构"""
         # 使用 ResumeDataStore 获取简历数据
-        resume_data = ResumeDataStore.get_data()
+        resume_data = ResumeDataStore.get_data(self.session_id)
         if not resume_data:
             return ToolResult(
                 output="No resume data loaded. Please use cv_reader_agent tool first to read resume data."

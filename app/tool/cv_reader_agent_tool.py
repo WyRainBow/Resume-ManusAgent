@@ -62,7 +62,7 @@ Parameters:
 
         直接使用 ReadCVContext 工具格式化简历数据，不生成回复。
         """
-        resume_data = ResumeDataStore.get_data()
+        resume_data = ResumeDataStore.get_data(self.session_id)
 
         # 如果提供了文件路径，从文件加载简历数据
         if file_path:
@@ -70,7 +70,7 @@ Parameters:
                 from app.utils.resume_parser import parse_markdown_resume
                 resume_data = parse_markdown_resume(file_path)
                 # 同时更新共享数据存储
-                ResumeDataStore.set_data(resume_data)
+                ResumeDataStore.set_data(resume_data, session_id=self.session_id)
             except Exception as e:
                 return ToolResult(error=f"Failed to load resume from file: {str(e)}")
 

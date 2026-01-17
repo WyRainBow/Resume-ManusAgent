@@ -129,6 +129,10 @@ function App() {
   // 从 localStorage 恢复简历数据
   const [resumeData, setResumeData] = useState(() => loadResumeDataFromStorage());
   const [showThinkingProcess, setShowThinkingProcess] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [showSessions, setShowSessions] = useState(false);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
 
   // 监听 messages 变化，自动保存到 localStorage
   useEffect(() => {
@@ -452,6 +456,53 @@ function App() {
     }
   };
 
+  const fetchSessions = async () => {
+    setLoadingSessions(true);
+    try {
+      const resp = await fetch('/api/history/sessions/list');
+      const data = await resp.json();
+      setSessions(data.sessions || []);
+    } catch (e) {
+      console.error('Failed to load sessions:', e);
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  const loadSession = async (sessionId) => {
+    try {
+      const resp = await fetch(`/api/history/sessions/${sessionId}`);
+      const data = await resp.json();
+      const loaded = (data.messages || []).map((m) => ({
+        role: m.role,
+        content: m.content,
+        type: m.role === 'assistant' ? 'answer' : 'user',
+      }));
+      setMessages(loaded);
+      setCurrentSessionId(sessionId);
+      saveMessagesToStorage(loaded);
+      // 恢复上下文到后端
+      const currentWs = wsRef.current || ws;
+      if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+        currentWs.send(JSON.stringify({
+          type: 'restore_history',
+          messages: loaded.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.content || ''
+          }))
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to load session:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (showSessions) {
+      fetchSessions();
+    }
+  }, [showSessions]);
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
       {/* 主聊天区域 */}
@@ -486,6 +537,18 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSessions(!showSessions)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm border ${
+                showSessions
+                  ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-100'
+              }`}
+              title="历史会话"
+            >
+              <MessageSquare size={16} />
+              <span className="hidden sm:inline">历史会话</span>
+            </button>
             {messages.length > 0 && (
               <>
                 <button
@@ -521,6 +584,44 @@ function App() {
 
         {/* Messages Area */}
         <main className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+          {showSessions && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-semibold text-gray-700">历史会话</div>
+                <button
+                  onClick={fetchSessions}
+                  className="text-xs text-indigo-600 hover:text-indigo-800"
+                >
+                  刷新
+                </button>
+              </div>
+              {loadingSessions ? (
+                <div className="text-xs text-gray-500">加载中...</div>
+              ) : sessions.length === 0 ? (
+                <div className="text-xs text-gray-500">暂无历史会话</div>
+              ) : (
+                <div className="space-y-2">
+                  {sessions.map((s) => (
+                    <button
+                      key={s.session_id}
+                      onClick={() => loadSession(s.session_id)}
+                      className={`w-full text-left p-2 rounded border text-xs ${
+                        currentSessionId === s.session_id
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{s.title || s.session_id}</span>
+                        <span className="text-gray-400">{s.message_count || 0} 条</span>
+                      </div>
+                      <div className="text-gray-400 mt-1">{s.updated_at || s.created_at}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
               <Bot size={64} className="mb-4 opacity-20" />

@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, MessageSquare, Pencil, Trash2, Check, X } from 'lucide-react';
 import ChatMessage from '@/components/chat/ChatMessage';
 import { Message } from '@/types/chat';
 import { ConnectionStatus } from '@/types/transport';
@@ -34,11 +34,17 @@ export default function SophiaChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<ConnectionStatus>('connecting');
+  const [sessions, setSessions] = useState([]);
+  const [showSessions, setShowSessions] = useState(false);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState(`conv-${Date.now()}`);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isFinalizedRef = useRef(false);
   const shouldFinalizeRef = useRef(false); // 标记是否需要完成（等待打字机效果完成）
-  const conversationIdRef = useRef(`conv-${Date.now()}`);
   const currentThoughtRef = useRef('');
   const currentAnswerRef = useRef('');
 
@@ -51,7 +57,7 @@ export default function SophiaChat() {
     sendMessage,
     finalizeStream,
   } = useCLTP({
-    conversationId: conversationIdRef.current,
+    conversationId,
     baseUrl: SSE_CONFIG.BASE_URL,
     heartbeatTimeout: SSE_CONFIG.HEARTBEAT_TIMEOUT,
   });
@@ -68,6 +74,7 @@ export default function SophiaChat() {
   useEffect(() => {
     currentAnswerRef.current = currentAnswer;
   }, [currentAnswer]);
+
 
   useEffect(() => {
     if (!isConnected) {
@@ -118,6 +125,104 @@ export default function SophiaChat() {
       isFinalizedRef.current = false;
     }, 100);
   }, [finalizeStream]);
+
+  const saveCurrentSession = useCallback(() => {
+    if (isProcessing || currentThoughtRef.current || currentAnswerRef.current) {
+      finalizeMessage();
+    }
+  }, [finalizeMessage, isProcessing]);
+
+  const fetchSessions = async () => {
+    setLoadingSessions(true);
+    try {
+      const resp = await fetch('/api/history/sessions/list');
+      const data = await resp.json();
+      setSessions(data.sessions || []);
+    } catch (error) {
+      console.error('[SophiaChat] Failed to fetch sessions:', error);
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showSessions) {
+      fetchSessions();
+    }
+  }, [showSessions]);
+
+  const deleteSession = async (sessionId: string) => {
+    if (!window.confirm('确定要删除此会话吗？')) return;
+    try {
+      await fetch(`/api/history/${sessionId}`, { method: 'DELETE' });
+      if (currentSessionId === sessionId) {
+        const newId = `conv-${Date.now()}`;
+        setMessages([]);
+        setCurrentSessionId(newId);
+        setConversationId(newId);
+        finalizeStream();
+      }
+      await fetchSessions();
+    } catch (error) {
+      console.error('[SophiaChat] Failed to delete session:', error);
+    }
+  };
+
+  const startRenameSession = (sessionId: string, title: string) => {
+    setEditingSessionId(sessionId);
+    setEditingTitle(title);
+  };
+
+  const cancelRenameSession = () => {
+    setEditingSessionId(null);
+    setEditingTitle('');
+  };
+
+  const renameSession = async (sessionId: string, title: string) => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
+    try {
+      await fetch(`/api/history/sessions/${sessionId}/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: trimmedTitle }),
+      });
+      cancelRenameSession();
+      await fetchSessions();
+    } catch (error) {
+      console.error('[SophiaChat] Failed to rename session:', error);
+    }
+  };
+
+  const loadSession = async (sessionId: string) => {
+    saveCurrentSession();
+    try {
+      const resp = await fetch(`/api/history/sessions/${sessionId}`);
+      const data = await resp.json();
+      const loadedMessages: Message[] = (data.messages || []).map((m: any) => ({
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.content || '',
+        timestamp: new Date().toISOString(),
+      }));
+
+      setMessages(loadedMessages);
+      setCurrentSessionId(sessionId);
+      setConversationId(sessionId);
+      finalizeStream();
+    } catch (error) {
+      console.error('[SophiaChat] Failed to load session:', error);
+    }
+  };
+
+  const createNewSession = () => {
+    saveCurrentSession();
+    const newId = `conv-${Date.now()}`;
+    setMessages([]);
+    setCurrentSessionId(newId);
+    setConversationId(newId);
+    finalizeStream();
+  };
 
   useEffect(() => {
     if (answerCompleteCount === 0) return;
@@ -179,17 +284,149 @@ export default function SophiaChat() {
               Thought Process · Streaming · Markdown · SSE
             </p>
           </div>
-          <button
-            onClick={handleClearConversation}
-            className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-200 hover:border-gray-300 transition-colors"
-          >
-            Clear
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowSessions(!showSessions)}
+              className={`flex items-center gap-2 text-sm px-3 py-1 rounded border transition-colors ${showSessions
+                ? 'text-orange-600 border-orange-200 bg-orange-50'
+                : 'text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              历史会话
+            </button>
+            <button
+              onClick={handleClearConversation}
+              className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded border border-gray-200 hover:border-gray-300 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Chat Area */}
       <main className="max-w-4xl mx-auto px-6 py-8 pb-32">
+        {showSessions && (
+          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-gray-700">历史会话</div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={createNewSession}
+                  className="text-xs text-orange-600 hover:text-orange-700"
+                >
+                  新建会话
+                </button>
+                <button
+                  onClick={fetchSessions}
+                  className="text-xs text-gray-500 hover:text-gray-700"
+                >
+                  刷新
+                </button>
+              </div>
+            </div>
+            {loadingSessions ? (
+              <div className="text-xs text-gray-500">加载中...</div>
+            ) : sessions.length === 0 ? (
+              <div className="text-xs text-gray-500">暂无历史会话</div>
+            ) : (
+              <div className="space-y-2">
+                {sessions.map((session: any) => (
+                  <div
+                    key={session.session_id}
+                    onClick={() => loadSession(session.session_id)}
+                    role="button"
+                    tabIndex={0}
+                    className={`w-full text-left p-2 rounded border text-xs ${currentSessionId === session.session_id
+                      ? 'bg-orange-50 border-orange-200 text-orange-700'
+                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        {editingSessionId === session.session_id ? (
+                          <input
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                renameSession(session.session_id, editingTitle);
+                              } else if (e.key === 'Escape') {
+                                cancelRenameSession();
+                              }
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-gray-200 rounded"
+                            autoFocus
+                          />
+                        ) : (
+                          <span className="font-medium truncate block">
+                            {session.title || session.session_id}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-gray-400">
+                        {editingSessionId === session.session_id ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                renameSession(session.session_id, editingTitle);
+                              }}
+                              className="p-1 hover:text-green-600"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cancelRenameSession();
+                              }}
+                              className="p-1 hover:text-gray-600"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRenameSession(session.session_id, session.title || session.session_id);
+                            }}
+                            className="p-1 hover:text-orange-600"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSession(session.session_id);
+                          }}
+                          className="p-1 hover:text-red-500"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                        <span className="ml-1">
+                          {session.message_count || 0} 条
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-gray-400 mt-1">
+                      {session.updated_at || session.created_at}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {messages.length === 0 && !isProcessing && (
           <div className="text-center py-20">
             <div className="text-5xl mb-4">✨</div>
