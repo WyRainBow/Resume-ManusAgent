@@ -20,6 +20,8 @@ from app.memory import (
     Intent,
 )
 from app.schema import Message, Role
+from app.agent.shared_state import AgentSharedState
+from app.tool.resume_data_store import ResumeDataStore
 
 
 class Manus(ToolCallAgent):
@@ -36,6 +38,7 @@ class Manus(ToolCallAgent):
     # 使用动态系统提示词
     system_prompt: str = ""
     next_step_prompt: str = ""
+    session_id: Optional[str] = None
 
     max_observe: int = 10000
     max_steps: int = 20
@@ -75,21 +78,42 @@ class Manus(ToolCallAgent):
     _last_intent_info: Dict[str, Any] = PrivateAttr(default_factory=dict)
     _current_resume_path: Optional[str] = PrivateAttr(default=None)
     _just_applied_optimization: bool = PrivateAttr(default=False)  # 标记是否刚应用了优化
+    _shared_state: AgentSharedState = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def initialize_helper(self) -> "Manus":
         """Initialize basic components synchronously."""
         self.browser_context_helper = BrowserContextHelper(self)
+        self._init_shared_state()
         # 初始化对话状态管理器（LLM 会在 base.py 的 initialize_agent 中初始化）
         # 传递 tool_collection 以支持增强意图识别
         self._conversation_state = ConversationStateManager(
             llm=None,
             tool_collection=self.available_tools,
-            use_enhanced_intent=True
+            use_enhanced_intent=True,
+            session_id=self.session_id,
         )
         # 初始化聊天历史管理器
-        self._chat_history = ChatHistoryManager(k=30)  # 滑动窗口：保留最近30条消息
+        self._chat_history = ChatHistoryManager(
+            k=30,
+            session_id=self.session_id,
+        )  # 滑动窗口：保留最近30条消息
         return self
+
+    def _init_shared_state(self) -> None:
+        """Initialize session-scoped shared state and inject into tools."""
+        session_id = self.session_id or "default"
+        self._shared_state = AgentSharedState(session_id=session_id)
+        ResumeDataStore.set_shared_state(session_id, self._shared_state)
+        self._inject_tool_context(self.available_tools.tools)
+
+    def _inject_tool_context(self, tools: List[Any]) -> None:
+        """Attach session_id and shared_state to tools."""
+        for tool in tools:
+            if hasattr(tool, "session_id"):
+                tool.session_id = self.session_id
+            if hasattr(tool, "shared_state"):
+                tool.shared_state = self._shared_state
 
     def _ensure_conversation_state_llm(self):
         """确保 ConversationStateManager 有 LLM 实例"""
@@ -150,6 +174,7 @@ class Manus(ToolCallAgent):
             tool for tool in self.mcp_clients.tools if tool.server_id == server_id
         ]
         self.available_tools.add_tools(*new_tools)
+        self._inject_tool_context(new_tools)
 
     async def disconnect_mcp_server(self, server_id: str = "") -> None:
         """Disconnect from an MCP server and remove its tools."""

@@ -1,6 +1,9 @@
 import json
 import threading
-import tomllib
+try:
+    import tomllib  # Python 3.11+
+except ImportError:
+    import tomli as tomllib  # Python < 3.11
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -191,6 +194,9 @@ class AppConfig(BaseModel):
     daytona_config: Optional[DaytonaSettings] = Field(
         None, description="Daytona configuration"
     )
+    enable_session_persistence: bool = Field(
+        default=False, description="Enable session state persistence"
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -326,6 +332,9 @@ class Config:
             "mcp_config": mcp_settings,
             "run_flow_config": run_flow_settings,
             "daytona_config": daytona_settings,
+            "enable_session_persistence": bool(
+                raw_config.get("context", {}).get("enable_session_persistence", False)
+            ),
         }
 
         self._config = AppConfig(**config_dict)
@@ -359,6 +368,10 @@ class Config:
     def run_flow_config(self) -> RunflowSettings:
         """Get the Run Flow configuration"""
         return self._config.run_flow_config
+
+    @property
+    def enable_session_persistence(self) -> bool:
+        return bool(self._config.enable_session_persistence)
 
     @property
     def workspace_root(self) -> Path:

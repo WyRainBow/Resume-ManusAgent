@@ -1,6 +1,7 @@
 """Agent stream output handler.
 
-Handles streaming agent execution results to WebSocket clients.
+Handles streaming agent execution results to SSE clients.
+现已集成 CLTP chunks 的生成与兼容输出。
 使用与原始 server.py 相同的手动步骤循环逻辑。
 """
 
@@ -16,6 +17,10 @@ def parse_thought_response(content: str) -> Tuple[Optional[str], Optional[str]]:
     """
     解析 LLM 输出中的 Thought 和 Response 部分
     复刻自 sophia-pro 的输出格式解析
+
+    Deprecated: CLTP 已提供标准的 think/plain content chunks，
+    后续在完成前端迁移后移除此函数与相关调用。
+    TODO(cltp): 前端完全迁移后删除 parse_thought_response
 
     Returns:
         (thought, response) - 如果没有找到对应部分则为 None
@@ -161,6 +166,8 @@ from app.web.streaming.events import (
 )
 from app.web.streaming.agent_state import AgentState, StateInfo
 from app.web.streaming.state_machine import AgentStateMachine
+from app.cltp.chunk_generator import CLTPChunkGenerator
+from app.cltp.chunk_to_sse import chunk_to_sse
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +225,9 @@ class AgentStream:
         self._last_answer_content: str = ""
         self._answer_sent_in_loop: bool = False  # 🚨 跟踪循环中是否已发送过 answer
 
+        # CLTP chunk generator
+        self._cltp_generator = CLTPChunkGenerator(session_id)
+
     async def execute(self, user_message: str) -> AsyncIterator[StreamEvent]:
         """Execute agent with streaming events.
 
@@ -236,6 +246,10 @@ class AgentStream:
                 message="Starting agent execution",
                 data={"user_message": user_message},
             )
+
+            # 生成 CLTP span:start(name='run') chunk
+            run_start_chunk = self._cltp_generator.emit_span_start('run')
+            # 转换为 SSE 格式（向后兼容）
             yield AgentStartEvent(
                 agent_name="Manus",
                 task=user_message,
@@ -371,6 +385,15 @@ class AgentStream:
                                         "timestamp": int(__import__('time').time() * 1000)
                                     }) + '\n')
                                 # #endregion
+
+                                # 生成 CLTP content(channel='think') chunk
+                                # 关键：保持文本内容原样，不进行任何修改
+                                think_chunk = self._cltp_generator.emit_content(
+                                    channel='think',
+                                    payload={'text': thought_part},  # 保持原样
+                                    done=False,
+                                )
+
                                 yield ThoughtEvent(
                                     thought=thought_part,
                                     session_id=self._session_id,
@@ -391,6 +414,15 @@ class AgentStream:
 
                             # 再发送 Response
                             final_content = response_part if response_part else final_answer
+
+                            # 生成 CLTP content(channel='plain', done=true) chunk
+                            # 关键：保持文本内容原样，不进行任何修改
+                            answer_chunk = self._cltp_generator.emit_content(
+                                channel='plain',
+                                payload={'text': final_content},  # 保持原样
+                                done=True,
+                            )
+
                             yield AnswerEvent(
                                 content=final_content,
                                 is_complete=True,
@@ -511,6 +543,16 @@ class AgentStream:
                                             "timestamp": int(__import__('time').time() * 1000)
                                         }) + '\n')
                                     # #endregion
+
+                                    # 生成 CLTP content(channel='think') chunk
+                                    # 关键：保持文本内容原样，不进行任何修改
+                                    think_chunk = self._cltp_generator.emit_content(
+                                        channel='think',
+                                        payload={'text': thought_part},  # 保持原样
+                                        done=False,
+                                    )
+
+                                    # 转换为 SSE 格式（向后兼容）
                                     yield ThoughtEvent(
                                         thought=thought_part,
                                         session_id=self._session_id,
@@ -534,6 +576,15 @@ class AgentStream:
                                     if is_final_answer:
                                         logger.info(f"[分析结果回复] {response_part[:200]}...")
                                         self._answer_sent_in_loop = True
+
+                                        # 生成 CLTP content(channel='plain', done=true) chunk
+                                        # 关键：保持文本内容原样，不进行任何修改
+                                        answer_chunk = self._cltp_generator.emit_content(
+                                            channel='plain',
+                                            payload={'text': response_part},  # 保持原样
+                                            done=True,
+                                        )
+
                                         yield AnswerEvent(
                                             content=response_part,
                                             is_complete=True,
@@ -541,6 +592,15 @@ class AgentStream:
                                         )
                                     else:
                                         logger.info(f"[Response] {response_part[:100]}...")
+
+                                        # 生成 CLTP content(channel='plain', done=false) chunk
+                                        # 关键：保持文本内容原样，不进行任何修改
+                                        answer_chunk = self._cltp_generator.emit_content(
+                                            channel='plain',
+                                            payload={'text': response_part},  # 保持原样
+                                            done=False,
+                                        )
+
                                         yield AnswerEvent(
                                             content=response_part,
                                             is_complete=False,
@@ -551,6 +611,15 @@ class AgentStream:
                                     if is_final_answer:
                                         logger.info(f"[分析结果回复] {msg.content[:200]}...")
                                         self._answer_sent_in_loop = True
+
+                                        # 生成 CLTP content(channel='plain', done=true) chunk
+                                        # 关键：保持文本内容原样，不进行任何修改
+                                        answer_chunk = self._cltp_generator.emit_content(
+                                            channel='plain',
+                                            payload={'text': msg.content},  # 保持原样
+                                            done=True,
+                                        )
+
                                         yield AnswerEvent(
                                             content=msg.content,
                                             is_complete=True,
@@ -559,6 +628,15 @@ class AgentStream:
                                     else:
                                         # 思考过程 - 标记为 thought
                                         logger.debug(f"[思考过程] {msg.content[:100]}...")
+
+                                        # 生成 CLTP content(channel='think') chunk
+                                        # 关键：保持文本内容原样，不进行任何修改
+                                        think_chunk = self._cltp_generator.emit_content(
+                                            channel='think',
+                                            payload={'text': msg.content},  # 保持原样
+                                            done=False,
+                                        )
+
                                         yield ThoughtEvent(
                                             thought=msg.content,
                                             session_id=self._session_id,
@@ -649,6 +727,14 @@ class AgentStream:
                         final_answer = msg.content
                         break
 
+                # 生成 CLTP content(channel='plain', done=true) chunk
+                # 关键：保持文本内容原样，不进行任何修改
+                answer_chunk = self._cltp_generator.emit_content(
+                    channel='plain',
+                    payload={'text': final_answer},  # 保持原样
+                    done=True,
+                )
+
                 yield AnswerEvent(
                     content=final_answer,
                     is_complete=True,
@@ -692,6 +778,9 @@ class AgentStream:
                 AgentState.COMPLETED,
                 message="Agent execution completed",
             )
+
+            # 生成 CLTP span:end(name='run') chunk
+            run_end_chunk = self._cltp_generator.emit_span_end('run')
 
             yield AgentEndEvent(
                 agent_name="Manus",

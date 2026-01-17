@@ -57,7 +57,7 @@ The CVAnalyzer Agent will:
 
         内部创建 CVAnalyzer Agent 并运行它来处理分析任务
         """
-        resume_data = ResumeDataStore.get_data()
+        resume_data = ResumeDataStore.get_data(self.session_id)
         if not resume_data:
             return ToolResult(
                 output="No resume data loaded. Please use cv_reader_agent tool first to read resume data."

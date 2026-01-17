@@ -6,12 +6,15 @@ Implements LangChain-compatible sliding window mechanism.
 """
 
 from typing import List, Optional
+from pathlib import Path
+from datetime import datetime
 
 from app.memory.langchain.chat_history import InMemoryChatMessageHistory
 from app.memory.langchain.messages.utils import trim_messages
 from app.schema import Message
 from app.memory.message_adapter import MessageAdapter
 from app.logger import logger
+from app.cltp.storage.conversation_storage import FileConversationStorage
 
 
 class ChatHistoryManager:
@@ -25,7 +28,13 @@ class ChatHistoryManager:
     - Automatic trimming when messages exceed k limit
     """
 
-    def __init__(self, k: int = 10, include_system: bool = True):
+    def __init__(
+        self,
+        k: int = 10,
+        include_system: bool = True,
+        session_id: Optional[str] = None,
+        storage: Optional[FileConversationStorage] = None,
+    ):
         """
         Initialize the chat history manager.
 
@@ -35,10 +44,13 @@ class ChatHistoryManager:
                 A turn typically consists of 2+ messages (user + assistant + tool).
             include_system: Whether to preserve SystemMessage at index 0
                 outside of the k limit (default: True).
+            session_id: Optional session identifier for isolation/logging.
         """
         self.k = k
         self.include_system = include_system
+        self.session_id = session_id or "default"
         self._history = InMemoryChatMessageHistory()
+        self._storage = storage
 
     def _trim_history(self) -> None:
         """
@@ -56,7 +68,9 @@ class ChatHistoryManager:
             )
             # Update the internal messages list
             self._history._messages = trimmed
-            logger.debug(f"✂️ ChatHistory: Trimmed to {len(trimmed)} messages (k={self.k})")
+            logger.debug(
+                f"✂️ ChatHistory[{self.session_id}]: Trimmed to {len(trimmed)} messages (k={self.k})"
+            )
 
     def add_message(self, message: Message) -> None:
         """Add an OpenManus Message to the history.
@@ -65,10 +79,14 @@ class ChatHistoryManager:
         """
         lc_message = MessageAdapter.to_langchain(message)
         self._history.add_message(lc_message)
-        logger.debug(f"📝 ChatHistory: Added {message.role} message ({len(message.content or '')} chars)")
+        logger.debug(
+            f"📝 ChatHistory[{self.session_id}]: Added {message.role} message "
+            f"({len(message.content or '')} chars)"
+        )
 
         # Apply sliding window
         self._trim_history()
+        self._persist_if_needed()
 
     def add_messages(self, messages: List[Message]) -> None:
         """Add multiple OpenManus Messages to the history.
@@ -77,10 +95,13 @@ class ChatHistoryManager:
         """
         lc_messages = MessageAdapter.batch_to_langchain(messages)
         self._history.add_messages(lc_messages)
-        logger.debug(f"📝 ChatHistory: Added {len(messages)} messages")
+        logger.debug(
+            f"📝 ChatHistory[{self.session_id}]: Added {len(messages)} messages"
+        )
 
         # Apply sliding window
         self._trim_history()
+        self._persist_if_needed()
 
     def get_messages(self, max_messages: Optional[int] = None) -> List[Message]:
         """
@@ -136,10 +157,69 @@ class ChatHistoryManager:
     def clear(self) -> None:
         """Clear all messages from the history."""
         self._history.clear()
-        logger.debug("🧹 ChatHistory: Cleared all messages")
+        logger.debug(f"🧹 ChatHistory[{self.session_id}]: Cleared all messages")
+        self._persist_if_needed()
+
+    def clear_messages(self) -> None:
+        """Backwards-compatible alias for clear()."""
+        self.clear()
+
+    def load_messages(self, messages: List[Message]) -> None:
+        """Replace current messages with provided list."""
+        lc_messages = MessageAdapter.batch_to_langchain(messages)
+        self._history._messages = lc_messages
+        self._trim_history()
+
+    async def save_checkpoint(self) -> None:
+        """Persist current history to storage."""
+        self._persist_if_needed()
+
+    async def restore_from_checkpoint(self) -> None:
+        """Load history from storage if available."""
+        if not self._storage:
+            return
+        loaded = self._storage.load_messages(self.session_id)
+        if loaded:
+            self.load_messages(loaded)
+
+    def export_to_file(self, export_path: str, fmt: str = "json") -> str:
+        """Export current conversation to file."""
+        if self._storage:
+            return self._storage.export_session(self.session_id, export_path, fmt=fmt)
+        # Fallback export when storage is not configured
+        data = {
+            "session_id": self.session_id,
+            "exported_at": datetime.now().isoformat(),
+            "message_count": len(self._history.messages),
+            "messages": [m.to_dict() for m in self.get_messages()],
+        }
+        path = Path(export_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if fmt == "markdown":
+            lines = [f"# Conversation {self.session_id}", ""]
+            for msg in data["messages"]:
+                lines.append(f"## {msg.get('role', 'assistant')}")
+                lines.append(msg.get("content", "") or "")
+                lines.append("")
+            path.write_text("\n".join(lines), encoding="utf-8")
+        else:
+            import json
+
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
 
     @property
     def message_count(self) -> int:
         """Get the total number of messages in the history."""
         return len(self._history.messages)
+
+    def _persist_if_needed(self) -> None:
+        if not self._storage:
+            return
+        try:
+            self._storage.save_session(self.session_id, self.get_messages())
+        except Exception as exc:
+            logger.warning(
+                f"Failed to persist chat history for {self.session_id}: {exc}"
+            )
 

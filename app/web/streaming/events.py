@@ -84,6 +84,7 @@ class ThoughtEvent(StreamEvent):
 
     Format: {"type": "thought", "content": "..."}
     """
+    # Deprecated: CLTP 已提供标准的 think content chunks（过渡期保留）
 
     def __init__(self, thought: str, session_id: str | None = None):
         super().__init__(
@@ -194,6 +195,7 @@ class AnswerEvent(StreamEvent):
 
     Format: {"type": "answer", "content": "..."}
     """
+    # Deprecated: CLTP 已提供标准的 plain content chunks（过渡期保留）
 
     def __init__(
         self,

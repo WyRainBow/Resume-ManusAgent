@@ -3,6 +3,7 @@
 This module provides:
 - POST /stream: SSE endpoint for streaming agent responses
 - Heartbeat mechanism for keeping connection alive
+- CLTP chunks are generated server-side and adapted to SSE for compatibility
 """
 
 import asyncio
@@ -22,11 +23,15 @@ from app.web.schemas.stream import StreamRequest, SSEEvent, HeartbeatEvent
 from app.web.streaming.agent_stream import StreamProcessor
 from app.web.streaming.state_machine import AgentStateMachine
 from app.web.streaming.events import StreamEvent
+from app.cltp.storage.conversation_storage import FileConversationStorage
+from app.memory.conversation_manager import ConversationManager
 
 router = APIRouter()
 
 # Create stream processor for agent execution
 stream_processor = StreamProcessor()
+storage = FileConversationStorage()
+conversation_manager = ConversationManager(storage=storage)
 
 # Store active sessions (conversation_id -> agent instance)
 _active_sessions: dict[str, dict] = {}
@@ -48,8 +53,11 @@ def _get_or_create_session(conversation_id: str, resume_path: Optional[str] = No
     if conversation_id not in _active_sessions:
         from app.memory import ChatHistoryManager
 
-        agent = Manus()
-        chat_history = ChatHistoryManager()
+        agent = Manus(session_id=conversation_id)
+        chat_history = conversation_manager.get_or_create_history(conversation_id)
+        # Align agent's internal history with session history
+        if hasattr(agent, "_chat_history"):
+            agent._chat_history = chat_history
 
         _active_sessions[conversation_id] = {
             "agent": agent,
@@ -81,6 +89,8 @@ async def _stream_event_generator(
     conversation_id: str,
     prompt: str,
     resume_path: Optional[str] = None,
+    cursor: Optional[str] = None,
+    resume: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Generate SSE events from agent execution.
 
@@ -215,6 +225,10 @@ async def stream_events(request: StreamRequest) -> StreamingResponse:
     conversation_id = request.conversation_id or str(uuid.uuid4())
 
     logger.info(f"[SSE] Starting stream for conversation: {conversation_id}")
+    if request.resume:
+        logger.info(
+            f"[SSE] Resume requested for conversation: {conversation_id} cursor={request.cursor}"
+        )
     logger.info(f"[SSE] Prompt: {request.prompt[:100]}...")
 
     return StreamingResponse(
@@ -222,6 +236,8 @@ async def stream_events(request: StreamRequest) -> StreamingResponse:
             conversation_id=conversation_id,
             prompt=request.prompt,
             resume_path=request.resume_path,
+            cursor=request.cursor,
+            resume=bool(request.resume),
         ),
         media_type="text/event-stream",
         headers={

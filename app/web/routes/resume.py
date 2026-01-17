@@ -5,7 +5,7 @@ Provides endpoints for resume data management.
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -44,7 +44,7 @@ async def get_resume_data() -> dict[str, Any]:
 class ResumeData(BaseModel):
     """Resume data response."""
 
-    name: str | None = None
+    name: Optional[str] = None
     content: str
     file_path: str
 
@@ -58,7 +58,7 @@ class ResumeSection(BaseModel):
 
 @router.get("/content", response_model=ResumeData)
 async def get_resume_content(
-    file_path: str | None = None,
+    file_path: Optional[str] = None,
 ) -> ResumeData:
     """Get resume content from file.
 
@@ -114,8 +114,8 @@ async def get_resume_content(
 @router.get("/section/{section_name}")
 async def get_resume_section(
     section_name: str,
-    file_path: str | None = None,
-) -> dict[str, Any]:
+    file_path: Optional[str] = None,
+) -> dict:
     """Get a specific section from the resume.
 
     Args:

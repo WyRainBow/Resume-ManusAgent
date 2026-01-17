@@ -18,6 +18,9 @@ export interface SSEEvent {
 export interface SSEConfig {
   baseUrl: string;
   heartbeatTimeout?: number;  // milliseconds, default 60000 (60s)
+  autoReconnect?: boolean;
+  maxReconnectAttempts?: number;
+  reconnectDelay?: number; // milliseconds
   onMessage?: (event: SSEEvent) => void;
   onError?: (error: Error) => void;
   onConnect?: () => void;
@@ -34,6 +37,11 @@ export class SSETransport {
   private heartbeatCheckInterval: NodeJS.Timeout | null = null;
   private isConnected: boolean = false;
   private conversationId: string | null = null;
+  private lastEventId: string | null = null;
+  private lastPrompt: string | null = null;
+  private lastResumePath: string | undefined;
+  private reconnectAttempts: number = 0;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   // Event listeners
   private messageListeners: EventCallback[] = [];
@@ -42,6 +50,9 @@ export class SSETransport {
   constructor(config: SSEConfig) {
     this.config = {
       heartbeatTimeout: 60000,  // 60 seconds default
+      autoReconnect: true,
+      maxReconnectAttempts: 5,
+      reconnectDelay: 1000,
       ...config,
     };
   }
@@ -59,6 +70,9 @@ export class SSETransport {
     // Start heartbeat monitoring
     this.startHeartbeatCheck();
 
+    this.lastPrompt = prompt;
+    this.lastResumePath = resumePath;
+
     const url = `${this.config.baseUrl}/api/stream`;
     console.log('[SSETransport] Connecting to', url);
 
@@ -73,6 +87,8 @@ export class SSETransport {
           prompt,
           conversation_id: this.conversationId,
           resume_path: resumePath,
+          cursor: this.lastEventId || undefined,
+          resume: this.reconnectAttempts > 0,
         }),
         signal: this.abortController.signal,
       });
@@ -87,6 +103,7 @@ export class SSETransport {
 
       this.isConnected = true;
       this.lastHeartbeatTime = Date.now();
+      this.reconnectAttempts = 0;
       this.config.onConnect?.();
       console.log('[SSETransport] Connected');
 
@@ -99,6 +116,7 @@ export class SSETransport {
       } else {
         console.error('[SSETransport] Connection error:', error);
         this.emitError(error instanceof Error ? error : new Error(String(error)));
+        this.scheduleReconnect();
       }
     } finally {
       this.isConnected = false;
@@ -180,6 +198,11 @@ export class SSETransport {
       if (parsed.data?.conversation_id && !this.conversationId) {
         this.conversationId = parsed.data.conversation_id;
       }
+      if (eventId) {
+        this.lastEventId = eventId;
+      } else if (parsed.id) {
+        this.lastEventId = parsed.id;
+      }
 
       // Convert to SSEEvent format
       const event: SSEEvent = {
@@ -217,7 +240,7 @@ export class SSETransport {
       if (this.isConnected && now - this.lastHeartbeatTime > timeout) {
         console.warn('[SSETransport] Heartbeat timeout, connection may be dead');
         this.emitError(new Error('Heartbeat timeout'));
-        // Don't auto-reconnect here, let the caller decide
+        this.scheduleReconnect();
       }
     }, 10000);  // Check every 10 seconds
   }
@@ -236,6 +259,10 @@ export class SSETransport {
    * Disconnect current stream
    */
   disconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
@@ -271,6 +298,8 @@ export class SSETransport {
    */
   clearConversation(): void {
     this.conversationId = null;
+    this.lastEventId = null;
+    this.reconnectAttempts = 0;
   }
 
   // ============================================================================
@@ -316,6 +345,23 @@ export class SSETransport {
       }
     }
     this.config.onError?.(error);
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.config.autoReconnect) return;
+    if (!this.lastPrompt) return;
+    if (this.reconnectAttempts >= (this.config.maxReconnectAttempts || 5)) {
+      return;
+    }
+    if (this.reconnectTimer) return;
+
+    const baseDelay = this.config.reconnectDelay || 1000;
+    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), 10000);
+    this.reconnectAttempts += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.send(this.lastPrompt || "", this.lastResumePath).catch(() => null);
+    }, delay);
   }
 }
 

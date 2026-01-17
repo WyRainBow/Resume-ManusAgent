@@ -33,6 +33,7 @@ from app.memory.conversation_state import (
     ConversationContext,
 )
 from app.memory.message_adapter import MessageAdapter
+from app.memory.conversation_manager import ConversationManager
 
 # New components
 from app.memory.checkpoint_saver import (
@@ -68,6 +69,7 @@ __all__ = [
     "OptimizationContext",
     "ConversationContext",
     "MessageAdapter",
+    "ConversationManager",
     # Checkpoint mechanism
     "CheckpointSaver",
     "Checkpoint",

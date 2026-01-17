@@ -1,13 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
 import SophiaChat from './pages/SophiaChat'
 import ErrorBoundary from './ErrorBoundary.jsx'
 import './index.css'
 
 // 简单的路由系统：基于 hash
-// - #sophia 或 #/sophia -> SophiaChat 页面
-// - 其他 -> 原始 App
+// - 默认跳转到 #sophiapro
+// - 其他路径也统一渲染 SophiaChat
 
 function getRouteFromHash() {
   const hash = decodeURIComponent(window.location.hash || '').toLowerCase();
@@ -29,6 +28,10 @@ function Router() {
     // 初始化时也检查一次
     const initialRoute = getRouteFromHash();
     console.log('[Router] Initial route:', initialRoute);
+    if (!initialRoute || initialRoute === '#') {
+      window.location.hash = '#sophiapro';
+      return;
+    }
     if (initialRoute !== route) {
       setRoute(initialRoute);
     }
@@ -36,15 +39,12 @@ function Router() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // 检查是否包含 sophia
   const isSophiaRoute = route.includes('sophia');
-  console.log('[Router] Rendering:', isSophiaRoute ? 'SophiaChat' : 'App', '| route:', route);
-
-  if (isSophiaRoute) {
-    return <SophiaChat />;
+  console.log('[Router] Rendering:', 'SophiaChat', '| route:', route);
+  if (!isSophiaRoute) {
+    window.location.hash = '#sophiapro';
   }
-
-  return <App />;
+  return <SophiaChat />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
