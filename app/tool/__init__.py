@@ -3,7 +3,7 @@ from app.tool.bash import Bash
 from app.tool.browser_use_tool import BrowserUseTool
 from app.tool.create_chat_completion import CreateChatCompletion
 from app.tool.cv_analyzer_agent_tool import CVAnalyzerAgentTool
-from app.tool.cv_editor_agent_tool import CVEditorAgentTool, GetResumeStructure
+from app.tool.cv_editor_agent_tool import CVEditorAgentTool
 from app.tool.cv_reader_agent_tool import CVReaderAgentTool
 from app.tool.cv_reader_tool import ReadCVContext
 from app.tool.education_analyzer_tool import EducationAnalyzerTool
@@ -34,7 +34,6 @@ __all__ = [
     "CVReaderAgentTool",
     "CVAnalyzerAgentTool",
     "CVEditorAgentTool",
-    "GetResumeStructure",
     "EducationAnalyzerTool",
 ]
 

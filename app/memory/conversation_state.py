@@ -40,6 +40,9 @@ class Intent(str, Enum):
     """用户意图 - 仅保留需要在代码层面特殊处理的意图"""
     GREETING = "greeting"  # 问候 - 直接返回，不走 LLM
     LOAD_RESUME = "load_resume"  # 加载简历 - 需检查重复
+    ANALYZE_RESUME = "analyze_resume"  # 分析简历（触发 Agent 委托）
+    OPTIMIZE_SECTION = "optimize_section"  # 优化某模块（触发 Agent 委托）
+    FULL_OPTIMIZE = "full_optimize"  # 全面优化（触发 Agent 委托）
     UNKNOWN = "unknown"  # 未知 - 交由 LLM 根据上下文判断
 
 
@@ -319,7 +322,19 @@ class ConversationStateManager:
                     }
                     return result
 
-                # 未识别到特定工具，返回增强后的查询
+                # 未识别到特定工具，尝试识别 Agent 委托意图
+                agent_intent, section = self._detect_agent_intent(enhanced_query)
+                if agent_intent:
+                    return {
+                        "intent": agent_intent,
+                        "tool": None,
+                        "tool_args": {"section": section} if section else {},
+                        "context_prompt": "",
+                        "should_skip_llm": False,
+                        "enhanced_query": enhanced_query,
+                        "intent_result": intent_result,
+                    }
+
                 result = {
                     "intent": Intent.UNKNOWN,
                     "tool": None,
@@ -366,9 +381,48 @@ class ConversationStateManager:
                 result["tool_args"] = {"file_path": file_path}
             elif info.get("file_path"):
                 result["tool_args"] = {"file_path": info["file_path"]}
+        else:
+            agent_intent, section = self._detect_agent_intent(user_input)
+            if agent_intent:
+                result["intent"] = agent_intent
+                result["tool_args"] = {"section": section} if section else {}
         # UNKNOWN 意图交给 LLM 根据上下文和工具描述判断
 
         return result
+
+    def _detect_agent_intent(self, text: str) -> Tuple[Optional[Intent], Optional[str]]:
+        """Detect agent delegation intents from user text."""
+        if not text:
+            return None, None
+
+        normalized = text.strip().lower()
+        section = self._extract_section(normalized)
+
+        if "全面优化" in normalized or "整体优化" in normalized or "全局优化" in normalized:
+            return Intent.FULL_OPTIMIZE, section
+
+        if "优化" in normalized:
+            return Intent.OPTIMIZE_SECTION, section
+
+        if "分析" in normalized or "评估" in normalized:
+            if "简历" in normalized or section:
+                return Intent.ANALYZE_RESUME, section
+
+        return None, None
+
+    def _extract_section(self, text: str) -> Optional[str]:
+        """Extract section name from text."""
+        section_map = {
+            "工作经历": ["工作经历", "工作经验", "工作"],
+            "教育背景": ["教育背景", "教育经历", "教育"],
+            "技能": ["技能", "技术栈"],
+            "项目经历": ["项目经历", "项目"],
+        }
+
+        for section_name, keywords in section_map.items():
+            if any(keyword in text for keyword in keywords):
+                return section_name
+        return None
 
     def _generate_context_prompt(self) -> str:
         """生成上下文提示"""

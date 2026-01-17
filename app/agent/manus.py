@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
@@ -8,7 +9,7 @@ from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
 from app.prompt.manus import NEXT_STEP_PROMPT, SYSTEM_PROMPT
-from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVReaderAgentTool, EducationAnalyzerTool, GetResumeStructure, Terminate, ToolCollection
+from app.tool import BrowserUseTool, CVAnalyzerAgentTool, CVEditorAgentTool, CVReaderAgentTool, EducationAnalyzerTool, Terminate, ToolCollection
 from app.tool.ask_human import AskHuman
 from app.tool.mcp import MCPClients, MCPClientTool
 from app.tool.python_execute import PythonExecute
@@ -21,7 +22,14 @@ from app.memory import (
 )
 from app.schema import Message, Role
 from app.agent.shared_state import AgentSharedState
+from app.agent.capability import CapabilityRegistry, ResumeCapability
+from app.agent.registry import AgentRegistry
+from app.agent.delegation_strategy import AgentDelegationStrategy
 from app.tool.resume_data_store import ResumeDataStore
+from app.agent.analyzers.work_experience_analyzer import WorkExperienceAnalyzerAgent  # noqa: F401
+from app.agent.analyzers.education_analyzer import EducationAnalyzerAgent  # noqa: F401
+from app.agent.analyzers.skills_analyzer import SkillsAnalyzerAgent  # noqa: F401
+from app.agent.resume_optimizer import ResumeOptimizerAgent  # noqa: F401
 
 
 class Manus(ToolCallAgent):
@@ -39,6 +47,7 @@ class Manus(ToolCallAgent):
     system_prompt: str = ""
     next_step_prompt: str = ""
     session_id: Optional[str] = None
+    capability: Optional[str] = None
 
     max_observe: int = 10000
     max_steps: int = 20
@@ -47,20 +56,7 @@ class Manus(ToolCallAgent):
     mcp_clients: MCPClients = Field(default_factory=MCPClients)
 
     # Add general-purpose tools to the tool collection
-    available_tools: ToolCollection = Field(
-        default_factory=lambda: ToolCollection(
-            PythonExecute(),
-            BrowserUseTool(),
-            StrReplaceEditor(),
-            AskHuman(),
-            Terminate(),
-            CVReaderAgentTool(),
-            CVAnalyzerAgentTool(),
-            CVEditorAgentTool(),
-            GetResumeStructure(),
-            EducationAnalyzerTool(),
-        )
-    )
+    available_tools: ToolCollection = Field(default_factory=ToolCollection)
 
     special_tool_names: list[str] = Field(default_factory=lambda: [Terminate().name])
     browser_context_helper: Optional[BrowserContextHelper] = None
@@ -83,6 +79,7 @@ class Manus(ToolCallAgent):
     @model_validator(mode="after")
     def initialize_helper(self) -> "Manus":
         """Initialize basic components synchronously."""
+        self.available_tools = self._build_tool_collection()
         self.browser_context_helper = BrowserContextHelper(self)
         self._init_shared_state()
         # 初始化对话状态管理器（LLM 会在 base.py 的 initialize_agent 中初始化）
@@ -99,6 +96,33 @@ class Manus(ToolCallAgent):
             session_id=self.session_id,
         )  # 滑动窗口：保留最近30条消息
         return self
+
+    def _build_tool_collection(self) -> ToolCollection:
+        """Build tool collection based on capability settings."""
+        base_tools = [
+            PythonExecute(),
+            BrowserUseTool(),
+            StrReplaceEditor(),
+            AskHuman(),
+            Terminate(),
+        ]
+        domain_tools = [
+            CVReaderAgentTool(),
+            CVAnalyzerAgentTool(),
+            CVEditorAgentTool(),
+            EducationAnalyzerTool(),
+        ]
+
+        capability: ResumeCapability = CapabilityRegistry.get(self.capability)
+        if not capability.tool_whitelist:
+            return ToolCollection(*base_tools, *domain_tools)
+
+        whitelisted = []
+        for tool in domain_tools:
+            if tool.name in capability.tool_whitelist:
+                whitelisted.append(tool)
+
+        return ToolCollection(*base_tools, *whitelisted)
 
     def _init_shared_state(self) -> None:
         """Initialize session-scoped shared state and inject into tools."""
@@ -202,6 +226,114 @@ class Manus(ToolCallAgent):
             await self.disconnect_mcp_server()
             self._initialized = False
 
+    async def delegate_to_agent(self, agent_name: str, **kwargs) -> Any:
+        """Delegate tasks to a registered sub-agent."""
+        agent = AgentRegistry.create(agent_name, session_id=self.session_id)
+
+        resume_data = kwargs.get("resume_data")
+        if resume_data is None:
+            resume_data = ResumeDataStore.get_data(self.session_id)
+
+        if hasattr(agent, "analyze"):
+            return await agent.analyze(resume_data)
+
+        analysis_results = kwargs.get("analysis_results")
+        if hasattr(agent, "optimize") and analysis_results is not None:
+            optimize_fn = agent.optimize
+            if callable(optimize_fn):
+                result = optimize_fn(analysis_results, resume_data=resume_data)
+                if hasattr(result, "__await__"):
+                    return await result
+                return result
+
+        if hasattr(agent, "chat") and kwargs.get("message"):
+            return await agent.chat(kwargs["message"], resume_data=resume_data)
+
+        raise ValueError(f"Unsupported delegation target: {agent_name}")
+
+    async def _run_delegated_analysis(self, section: Optional[str]) -> List[Dict[str, Any]]:
+        """Run delegated analysis for given section or all."""
+        analyzers = self._resolve_analyzers_by_section(section)
+        return await self._parallel_delegate_analyzers(analyzers)
+
+    async def _parallel_delegate_analyzers(self, analyzers: List[str]) -> List[Dict[str, Any]]:
+        """并行委托给分析 Agent。"""
+        if not analyzers:
+            return []
+        tasks = [self.delegate_to_agent(name) for name in analyzers]
+        results = await asyncio.gather(*tasks)
+        return results
+
+    def _resolve_analyzers_by_section(self, section: Optional[str]) -> List[str]:
+        """Resolve analyzers list by section."""
+        if not section:
+            return [
+                "work_experience_analyzer",
+                "education_analyzer_agent",
+                "skills_analyzer",
+            ]
+
+        normalized = section.lower()
+        if "工作" in normalized:
+            return ["work_experience_analyzer"]
+        if "教育" in normalized:
+            return ["education_analyzer_agent"]
+        if "技能" in normalized or "技术" in normalized:
+            return ["skills_analyzer"]
+        return [
+            "work_experience_analyzer",
+            "education_analyzer_agent",
+            "skills_analyzer",
+        ]
+
+    def _format_analysis_report(self, analysis_results: List[Dict[str, Any]]) -> str:
+        """Format aggregated analysis results."""
+        lines = ["## 📊 简历分析结果", ""]
+        for result in analysis_results:
+            module_name = result.get("module_display_name") or result.get("module", "模块")
+            score = result.get("score", 0)
+            issues = result.get("issues") or []
+            lines.append(f"### {module_name}")
+            lines.append(f"- 评分: {score}/100")
+            if issues:
+                lines.append("- 问题摘要:")
+                for issue in issues[:3]:
+                    severity = issue.get("severity", "medium")
+                    problem = issue.get("problem", "")
+                    suggestion = issue.get("suggestion", "")
+                    lines.append(f"  - [{severity}] {problem}（建议: {suggestion}）")
+            lines.append("")
+
+        lines.append("如需针对某个模块生成优化建议，请告诉我模块名称。")
+        return "\n".join(lines)
+
+    def _format_optimization_suggestions(self, result: Dict[str, Any], full: bool = False) -> str:
+        """Format optimization suggestions from ResumeOptimizerAgent."""
+        suggestions = result.get("optimization_suggestions") or []
+        if not suggestions:
+            return "未生成可用的优化建议，请提供更具体的优化方向。"
+
+        title = "## 🛠️ 全面优化建议" if full else "## 🛠️ 优化建议"
+        lines = [title, ""]
+        for idx, suggestion in enumerate(suggestions, 1):
+            lines.append(f"### 建议 {idx}: {suggestion.get('title', '优化建议')}")
+            current = suggestion.get("current", "")
+            optimized = suggestion.get("optimized", "")
+            explanation = suggestion.get("explanation", "")
+            apply_path = suggestion.get("apply_path")
+            if current:
+                lines.append(f"- 当前: {current}")
+            if optimized:
+                lines.append(f"- 优化: {optimized}")
+            if explanation:
+                lines.append(f"- 说明: {explanation}")
+            if apply_path:
+                lines.append(f"- 路径: `{apply_path}`")
+            lines.append("")
+
+        lines.append("是否要应用这些优化？请告诉我需要应用的建议序号。")
+        return "\n".join(lines)
+
     def _get_last_user_input(self) -> str:
         """获取最后一条真正的用户输入（过滤系统提示词）"""
         # 系统提示词的特征
@@ -253,6 +385,9 @@ class Manus(ToolCallAgent):
             directory=config.workspace_root,
             context=context
         )
+        capability = CapabilityRegistry.get(self.capability)
+        if capability.instructions_addendum:
+            system_prompt = f"{system_prompt}\n\n{capability.instructions_addendum}"
 
         # 生成下一步提示词（传入 intent 用于判断是否需要决策逻辑）
         next_step = await self._generate_next_step_prompt(intent)
@@ -401,6 +536,46 @@ class Manus(ToolCallAgent):
                     msg.content = enhanced_query
                     logger.debug(f"已更新用户消息为增强查询: {enhanced_query}")
                     break
+
+        if intent in [Intent.ANALYZE_RESUME, Intent.OPTIMIZE_SECTION, Intent.FULL_OPTIMIZE]:
+            section = tool_args.get("section") if isinstance(tool_args, dict) else None
+            try:
+                strategy = AgentDelegationStrategy.resolve(intent, section)
+                analyzers = strategy.get("analyzers") if strategy else None
+
+                if intent == Intent.ANALYZE_RESUME:
+                    analysis_results = await self._parallel_delegate_analyzers(analyzers or [])
+                    content = self._format_analysis_report(analysis_results)
+                    self.memory.add_message(Message.assistant_message(content))
+                    from app.schema import AgentState
+                    self.state = AgentState.FINISHED
+                    return False
+
+                if intent == Intent.OPTIMIZE_SECTION:
+                    analysis_results = await self._parallel_delegate_analyzers(analyzers or [])
+                    suggestions = await self.delegate_to_agent(
+                        strategy.get("optimizer", "resume_optimizer") if strategy else "resume_optimizer",
+                        analysis_results=analysis_results,
+                    )
+                    content = self._format_optimization_suggestions(suggestions)
+                    self.memory.add_message(Message.assistant_message(content))
+                    from app.schema import AgentState
+                    self.state = AgentState.FINISHED
+                    return False
+
+                if intent == Intent.FULL_OPTIMIZE:
+                    analysis_results = await self._parallel_delegate_analyzers(analyzers or [])
+                    suggestions = await self.delegate_to_agent(
+                        strategy.get("optimizer", "resume_optimizer") if strategy else "resume_optimizer",
+                        analysis_results=analysis_results,
+                    )
+                    content = self._format_optimization_suggestions(suggestions, full=True)
+                    self.memory.add_message(Message.assistant_message(content))
+                    from app.schema import AgentState
+                    self.state = AgentState.FINISHED
+                    return False
+            except Exception as exc:
+                logger.warning(f"委托子 Agent 失败，回退到 LLM 路径: {exc}")
 
         # 🔑 特殊处理：检查是否刚应用了优化
         if getattr(self, '_just_applied_optimization', False):

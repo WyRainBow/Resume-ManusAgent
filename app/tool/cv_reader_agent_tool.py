@@ -34,6 +34,7 @@ Returns: Raw resume data (no analysis). After getting data, use cv_analyzer_agen
 
 Parameters:
 - section: "all" (default), "basic", "experience", "education", etc.
+- output_mode: "content" (default) or "structure"
 - file_path: (optional) Path to resume markdown file to load
 """
 
@@ -46,6 +47,12 @@ Parameters:
                 "enum": ["all", "basic", "education", "experience", "projects", "skills", "awards", "opensource"],
                 "default": "all"
             },
+            "output_mode": {
+                "type": "string",
+                "description": "Output mode: 'content' returns formatted resume, 'structure' returns field paths.",
+                "enum": ["content", "structure"],
+                "default": "content"
+            },
             "file_path": {
                 "type": "string",
                 "description": "Optional path to a resume markdown file to load and parse."
@@ -57,7 +64,12 @@ Parameters:
     class Config:
         arbitrary_types_allowed = True
 
-    async def execute(self, section: str = "all", file_path: Optional[str] = None) -> ToolResult:
+    async def execute(
+        self,
+        section: str = "all",
+        output_mode: str = "content",
+        file_path: Optional[str] = None,
+    ) -> ToolResult:
         """读取简历数据并返回
 
         直接使用 ReadCVContext 工具格式化简历数据，不生成回复。
@@ -80,6 +92,10 @@ Parameters:
             )
 
         try:
+            if output_mode == "structure":
+                output = self._format_structure(resume_data)
+                return ToolResult(output=output)
+
             # 使用 ReadCVContext 工具格式化简历数据
             read_tool = ReadCVContext()
             read_tool.set_resume_data(resume_data)
@@ -91,4 +107,40 @@ Parameters:
 
         except Exception as e:
             return ToolResult(error=f"Failed to read resume data: {str(e)}")
+
+    def _format_structure(
+        self,
+        resume_data: dict,
+        max_depth: int = 3,
+    ) -> str:
+        """格式化简历结构（字段路径），用于编辑定位。"""
+        lines = []
+
+        def format_structure(data: dict, prefix: str = "", current_depth: int = 0) -> None:
+            if current_depth >= max_depth:
+                return
+
+            for key, value in data.items():
+                if key.startswith("_"):
+                    continue
+                path = f"{prefix}.{key}" if prefix else key
+                if isinstance(value, dict):
+                    lines.append(f"📁 {path}/")
+                    format_structure(value, path, current_depth + 1)
+                elif isinstance(value, list):
+                    if value and isinstance(value[0], dict):
+                        lines.append(f"📋 {path}[{len(value)} items]")
+                        format_structure(value[0], f"{path}[0]", current_depth + 1)
+                        if len(value) > 1:
+                            lines.append(f"  ... and {len(value) - 1} more items")
+                    else:
+                        lines.append(f"📋 {path}[{len(value)}]")
+                else:
+                    value_str = str(value)[:50]
+                    if len(str(value)) > 50:
+                        value_str = value_str + "..."
+                    lines.append(f"📄 {path} = {value_str}")
+
+        format_structure(resume_data)
+        return "📋 Resume Structure:\n\n" + "\n".join(lines)
 

@@ -814,7 +814,6 @@ const MessageItem = ({ message }) => {
       'load_resume_data': null, // 不显示图标
       'cv_reader_agent': null, // 不显示图标
       'cv_editor_agent': Edit,
-      'get_resume_structure': BarChart,
       'create_chat_completion': MessageSquare,
     };
 
@@ -822,7 +821,6 @@ const MessageItem = ({ message }) => {
       'load_resume_data': 'from-emerald-50 to-teal-50 border-emerald-200 text-emerald-700 bg-emerald-50/50',
       'cv_reader_agent': 'from-blue-50 to-cyan-50 border-blue-200 text-blue-700 bg-blue-50/50',
       'cv_editor_agent': 'from-violet-50 to-purple-50 border-violet-200 text-violet-700 bg-violet-50/50',
-      'get_resume_structure': 'from-amber-50 to-orange-50 border-amber-200 text-amber-700 bg-amber-50/50',
     };
 
     const colorClass = toolColors[message.tool] || 'from-gray-50 to-slate-50 border-gray-200 text-gray-700 bg-gray-50/50';
@@ -838,11 +836,9 @@ const MessageItem = ({ message }) => {
             <div className="flex items-center gap-3">
               {IconComponent ? (
                 <div className={`p-1.5 rounded-lg ${message.tool === 'cv_editor_agent' ? 'bg-violet-100' :
-                  message.tool === 'get_resume_structure' ? 'bg-amber-100' :
-                    'bg-gray-100'}`}>
+                  'bg-gray-100'}`}>
                   <IconComponent size={16} className={message.tool === 'cv_editor_agent' ? 'text-violet-600' :
-                    message.tool === 'get_resume_structure' ? 'text-amber-600' :
-                      'text-gray-600'} />
+                    'text-gray-600'} />
                 </div>
               ) : null}
               <div className="flex items-center gap-2">
@@ -949,7 +945,6 @@ const MessageItem = ({ message }) => {
       'load_resume_data': null, // 不显示图标
       'cv_reader_agent': null, // 不显示图标
       'cv_editor_agent': Edit,
-      'get_resume_structure': BarChart,
     };
 
     const IconComponent = toolIconComponents[message.tool];
