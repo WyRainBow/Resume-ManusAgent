@@ -10,8 +10,8 @@
 
 ## 归档信息
 
-**归档分支**：`archive/merged-to-ai-resume-2026-01-18`  
-**新项目位置**：`AI 简历/backend/agent/`  
+**归档分支**：`archive/merged-to-ai-resume-2026-01-18`
+**新项目位置**：`AI 简历/backend/agent/`
 **文档位置**：`AI 简历/docs/openmanus/`
 
 ## 相关文档
