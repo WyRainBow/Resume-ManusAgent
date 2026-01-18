@@ -1,5 +1,35 @@
 # OpenManus - 简历优化 AI Agent
 
+## 📦 项目状态：已归档
+
+**归档日期**：2026-01-18  
+**归档原因**：OpenManus 已完整合并到 AI 简历项目
+
+### 归档说明
+
+⚠️ **归档不等于删除** - 所有代码和文档完整保留，仅标记为归档状态。
+
+OpenManus 项目的所有核心功能、Agent 模块、Tool 模块和文档已完整迁移到 AI 简历项目中：
+
+- **代码位置**：`AI 简历/backend/agent/`
+- **文档位置**：`AI 简历/docs/openmanus/`
+- **API 路由**：`/api/agent/*`
+
+### 后续维护
+
+- **不再维护**：OpenManus 项目将不再进行独立开发和更新（**代码和文档完整保留，仅停止新功能开发**）
+- **统一维护**：所有开发和维护工作将在 AI 简历项目中进行
+- **历史参考**：OpenManus 归档分支 `archive/merged-to-ai-resume-2026-01-18` 和 `main` 分支均保留完整历史代码和文档
+
+### 相关文档
+
+- [合并验证报告](../AI 简历/docs/openmanus/合并验证报告_2026-01-18.md)
+- [优化分析报告](../AI 简历/docs/openmanus/优化分析报告_2026-01-18.md)
+- [合并计划文档](../AI 简历/docs/openmanus/合并两个项目/openmanus_合并到_ai_简历_9c34e867.plan.md)
+- [归档计划文档](docs/OpenManus归档计划_2026-01-18.md)
+
+---
+
 <p align="center">
   <img src="assets/logo.jpg" width="200"/>
 </p>
