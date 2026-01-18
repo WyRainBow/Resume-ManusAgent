@@ -40,7 +40,11 @@ _active_sessions: dict[str, dict] = {}
 HEARTBEAT_INTERVAL = 30  # seconds
 
 
-def _get_or_create_session(conversation_id: str, resume_path: Optional[str] = None) -> dict:
+def _get_or_create_session(
+    conversation_id: str,
+    resume_path: Optional[str] = None,
+    resume_data: Optional[dict] = None,
+) -> dict:
     """Get existing session or create a new one.
 
     Args:
@@ -52,12 +56,18 @@ def _get_or_create_session(conversation_id: str, resume_path: Optional[str] = No
     """
     if conversation_id not in _active_sessions:
         from app.memory import ChatHistoryManager
+        from app.tool.resume_data_store import ResumeDataStore
 
         agent = Manus(session_id=conversation_id)
         chat_history = conversation_manager.get_or_create_history(conversation_id)
         # Align agent's internal history with session history
         if hasattr(agent, "_chat_history"):
             agent._chat_history = chat_history
+
+        if resume_data:
+            ResumeDataStore.set_data(resume_data, session_id=conversation_id)
+            if hasattr(agent, "_conversation_state") and agent._conversation_state:
+                agent._conversation_state.update_resume_loaded(True)
 
         _active_sessions[conversation_id] = {
             "agent": agent,
@@ -70,6 +80,12 @@ def _get_or_create_session(conversation_id: str, resume_path: Optional[str] = No
         # Update resume path if provided
         if resume_path:
             _active_sessions[conversation_id]["resume_path"] = resume_path
+        if resume_data:
+            from app.tool.resume_data_store import ResumeDataStore
+            ResumeDataStore.set_data(resume_data, session_id=conversation_id)
+            agent = _active_sessions[conversation_id].get("agent")
+            if agent and hasattr(agent, "_conversation_state") and agent._conversation_state:
+                agent._conversation_state.update_resume_loaded(True)
 
     return _active_sessions[conversation_id]
 
@@ -89,6 +105,7 @@ async def _stream_event_generator(
     conversation_id: str,
     prompt: str,
     resume_path: Optional[str] = None,
+    resume_data: Optional[dict] = None,
     cursor: Optional[str] = None,
     resume: bool = False,
 ) -> AsyncGenerator[str, None]:
@@ -108,7 +125,7 @@ async def _stream_event_generator(
     Yields:
         SSE formatted strings
     """
-    session = _get_or_create_session(conversation_id, resume_path)
+    session = _get_or_create_session(conversation_id, resume_path, resume_data)
     agent = session["agent"]
     chat_history = session["chat_history"]
 
@@ -236,6 +253,7 @@ async def stream_events(request: StreamRequest) -> StreamingResponse:
             conversation_id=conversation_id,
             prompt=request.prompt,
             resume_path=request.resume_path,
+            resume_data=request.resume_data,
             cursor=request.cursor,
             resume=bool(request.resume),
         ),

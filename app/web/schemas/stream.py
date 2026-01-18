@@ -20,6 +20,7 @@ class StreamRequest(BaseModel):
     prompt: str = Field(..., description="User message to send to the agent")
     conversation_id: Optional[str] = Field(None, description="Conversation ID for context")
     resume_path: Optional[str] = Field(None, description="Path to resume file")
+    resume_data: Optional[dict] = Field(None, description="Resume data payload")
     cursor: Optional[str] = Field(None, description="Cursor for resume/reconnect")
     resume: Optional[bool] = Field(False, description="Whether this is a resume request")
 
